@@ -21,27 +21,4 @@ Most "Text-to-SQL" tools fail because they don't understand business context. If
 
 The system uses a "Retrieval-Augmented Generation" (RAG) flow combined with a self-correcting execution loop.
 
-```mermaid
-graph TD
-    User["User Query"] --> Router{"Router"}
-    Router -- "General Chat" --> LLM["LLM Response"]
-    
-    subgraph RAG ["Knowledge Augmentation (RAG)"]
-    Router -- "Data Request" --> VectorStore["Vector DB (Chroma)"]
-    VectorStore -- "Semantic Search for Rules" --> Context["Context Builder"]
-    end
-
-    subgraph Analysis ["The Analyst Loop"]
-    Context --> Schema["Schema Selector"]
-    Schema --> SQLGen["SQL Generator"]
-    SQLGen --> Safety{"Safety Check"}
-    Safety -- "Dangerous (DROP/DELETE)" --> Error["Return Safety Error"]
-    Safety -- "Safe (SELECT)" --> Exec[("PostgreSQL DB")]
-    
-    Exec -- "SQL Error" --> Reflection["Error Reflector"]
-    Reflection --> SQLGen
-    
-    Exec -- "Success (Raw Data)" --> Analyst["Data Summarizer"]
-    end
-    
-    Analyst --> Report["Final Insight Report"]
+<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/cb0c98e9-e83f-4882-b5e6-9c992f219c74" />
