@@ -5,7 +5,6 @@
 ![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)
 ![Database](https://img.shields.io/badge/PostgreSQL-15-blue)
 ![Vector DB](https://img.shields.io/badge/VectorDB-Chroma-purple)
-![Architecture](https://img.shields.io/badge/Architecture-RAG_%2B_ReAct-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 ## 📖 Overview
