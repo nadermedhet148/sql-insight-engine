@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  metadata_store:
+    image: postgres:15
+    container_name: metadata_store
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: insight_engine
+    ports:
+      - "5432:5432"
+    volumes:
+      - metadata_data:/var/lib/postgresql/data
+    networks:
+      - insight_network
+
+  external_test_db:
+    image: postgres:15
+    container_name: external_test_db
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: external_test_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - external_test_data:/var/lib/postgresql/data
+    networks:
+      - insight_network
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - insight_network
+
+volumes:
+  metadata_data:
+  external_test_data:
+  chroma_data:
+
+networks:
+  insight_network:
+    driver: bridge
