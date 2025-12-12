@@ -16,7 +16,7 @@ from database.models import Base
 from routers import users
 
 # Create tables if they don't exist (Simple migration execution)
-Base.metadata.create_all(bind=engine)
+# Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="SQL Insight Engine API")
 

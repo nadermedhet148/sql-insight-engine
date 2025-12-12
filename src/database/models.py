@@ -19,6 +19,7 @@ class UserDBConfig(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    db_type = Column(String, nullable=False, default="postgresql")
     host = Column(String, nullable=False)
     db_name = Column(String, nullable=False)
     username = Column(String, nullable=False)

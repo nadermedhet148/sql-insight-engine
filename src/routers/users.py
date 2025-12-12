@@ -16,6 +16,7 @@ class UserCreate(BaseModel):
     quota: int = 100
 
 class UserDBConfigCreate(BaseModel):
+    db_type: str = "postgresql"
     host: str
     db_name: str
     username: str
@@ -28,7 +29,8 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
-        return db_user
+        # Return a dict or Pydantic model, not the SQLAlchemy object directly if response_model is Any or specific
+        return {"id": db_user.id, "account_id": db_user.account_id, "quota": db_user.quota}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
@@ -45,6 +47,7 @@ def add_db_config(user_id: int, config: UserDBConfigCreate, db: Session = Depend
 
     new_config = UserDBConfig(
         user_id=user_id,
+        db_type=config.db_type,
         host=config.host,
         db_name=config.db_name,
         username=config.username,
@@ -54,7 +57,7 @@ def add_db_config(user_id: int, config: UserDBConfigCreate, db: Session = Depend
         db.add(new_config)
         db.commit()
         db.refresh(new_config)
-        return new_config
+        return {"id": new_config.id, "user_id": new_config.user_id, "host": new_config.host, "db_name": new_config.db_name, "username": new_config.username}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
