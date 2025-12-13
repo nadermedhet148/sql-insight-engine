@@ -6,3 +6,5 @@ fastapi
 uvicorn
 sqlalchemy
 alembic
+minio
+pika
