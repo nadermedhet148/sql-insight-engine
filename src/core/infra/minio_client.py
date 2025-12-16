@@ -4,10 +4,18 @@ import os
 
 def get_minio_client():
     # In a real app, use env vars for host/creds
+    minio_host = os.getenv("MINIO_HOST", "localhost")
+    minio_port = os.getenv("MINIO_PORT", "9000")
+    minio_user = os.getenv("MINIO_ROOT_USER", "minioadmin")
+    minio_password = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
+    
+    # Construct endpoint
+    endpoint = f"{minio_host}:{minio_port}"
+    
     client = Minio(
-        "localhost:9000",
-        access_key="minioadmin",
-        secret_key="minioadmin",
+        endpoint,
+        access_key=minio_user,
+        secret_key=minio_password,
         secure=False
     )
     return client

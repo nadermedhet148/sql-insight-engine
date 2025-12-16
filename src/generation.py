@@ -1,4 +1,4 @@
-from gemini_client import GeminiClient
+from core.gemini_client import GeminiClient
 
 class SQLGenerator:
     def __init__(self):

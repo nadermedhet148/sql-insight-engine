@@ -1,7 +1,7 @@
 import os
 # import chromadb
 # from chromadb.config import Settings
-from gemini_client import GeminiClient
+from core.gemini_client import GeminiClient
 
 class KnowledgeBase:
     def __init__(self):
