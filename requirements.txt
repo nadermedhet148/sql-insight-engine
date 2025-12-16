@@ -12,3 +12,4 @@ sqlalchemy
 psycopg2-binary
 python-dotenv
 alembic
+mcp

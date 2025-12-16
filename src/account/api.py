@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import Any
+from typing import Any, Optional
 from sqlalchemy.orm import Session
 from core.database.session import get_db
 from account.models import User, UserDBConfig
@@ -18,6 +18,7 @@ class UserCreate(BaseModel):
 class UserDBConfigCreate(BaseModel):
     db_type: str = "postgresql"
     host: str
+    port: Optional[int] = None
     db_name: str
     username: str
     password: str
@@ -29,7 +30,6 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
-        # Return a dict or Pydantic model, not the SQLAlchemy object directly if response_model is Any or specific
         return {"id": db_user.id, "account_id": db_user.account_id, "quota": db_user.quota}
     except Exception as e:
         db.rollback()
@@ -41,7 +41,6 @@ def add_db_config(user_id: int, config: UserDBConfigCreate, db: Session = Depend
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    # Check if config exists
     if user.db_config:
          raise HTTPException(status_code=400, detail="Configuration already exists for this user")
 
@@ -61,3 +60,4 @@ def add_db_config(user_id: int, config: UserDBConfigCreate, db: Session = Depend
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
+
