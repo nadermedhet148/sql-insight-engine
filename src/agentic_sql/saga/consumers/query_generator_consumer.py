@@ -8,11 +8,11 @@ import pika
 import json
 import time
 from typing import List
-from core.saga.messages import (
+from agentic_sql.saga.messages import (
     TablesCheckedMessage, QueryGeneratedMessage,
     SagaErrorMessage, message_from_dict
 )
-from core.saga.publisher import SagaPublisher
+from agentic_sql.saga.publisher import SagaPublisher
 from core.gemini_client import GeminiClient
 from account.models import User
 from core.database.session import get_db
@@ -151,7 +151,7 @@ def process_query_generation(ch, method, properties, body):
         publisher.publish_query_execution(next_message)
         
         # Update progress in store
-        from core.saga.state_store import get_saga_state_store
+        from agentic_sql.saga.state_store import get_saga_state_store
         saga_store = get_saga_state_store()
         saga_store.update_result(message.saga_id, {
             "call_stack": [entry.to_dict() for entry in next_message.call_stack],
@@ -200,7 +200,7 @@ def process_query_generation(ch, method, properties, body):
 
 def start_query_generator_consumer(host: str = None):
     """Start the query generator consumer"""
-    from core.saga.publisher import SagaPublisher
+    from agentic_sql.saga.publisher import SagaPublisher
     
     host = host or "localhost"
     

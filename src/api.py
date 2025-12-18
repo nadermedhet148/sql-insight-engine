@@ -36,7 +36,7 @@ import account.models
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Start all Saga consumers
-    from core.saga.consumers import (
+    from agentic_sql.saga.consumers import (
         start_knowledge_base_consumer,
         start_tables_consumer,
         start_query_generator_consumer,
@@ -98,8 +98,8 @@ app.add_middleware(
 app.include_router(users.router)
 
 # Include async saga routes
-from account import api_async
-app.include_router(api_async.router, prefix="/users", tags=["async-queries"])
+from agentic_sql import api as agentic_sql_api
+app.include_router(agentic_sql_api.router, prefix="/users", tags=["async-queries"])
 
 app.include_router(knowledgebase.router)
 

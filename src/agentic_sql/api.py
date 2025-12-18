@@ -1,7 +1,3 @@
-"""
-Updated API endpoints for Saga-based async query processing
-"""
-
 import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -9,9 +5,9 @@ from pydantic import BaseModel
 
 from core.database.session import get_db
 from account.models import User, UsageLog
-from core.saga.messages import QueryInitiatedMessage
-from core.saga.publisher import get_saga_publisher
-from core.saga.state_store import get_saga_state_store
+from agentic_sql.saga.messages import QueryInitiatedMessage
+from agentic_sql.saga.publisher import get_saga_publisher
+from agentic_sql.saga.state_store import get_saga_state_store
 
 
 class NaturalLanguageQueryRequest(BaseModel):
@@ -41,12 +37,6 @@ def query_user_database_async(
     request: NaturalLanguageQueryRequest,
     db: Session = Depends(get_db)
 ):
-    """
-    Async query endpoint using Saga pattern.
-    
-    Returns immediately with saga_id for tracking.
-    Query is processed asynchronously through RabbitMQ saga.
-    """
     # Get user
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -144,13 +134,6 @@ def query_user_database_async(
 
 @router.get("/{user_id}/query/status/{saga_id}", response_model=QueryStatusResponse)
 def get_query_status(user_id: int, saga_id: str, db: Session = Depends(get_db)):
-    """
-    Get status and result of an async query
-    
-    Returns:
-    - status: "pending" | "completed" | "error"
-    - result: Full query result if completed
-    """
     # Verify user exists
     user = db.query(User).filter(User.id == user_id).first()
     if not user:

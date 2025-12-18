@@ -8,11 +8,11 @@ import pika
 import json
 import time
 from typing import List
-from core.saga.messages import (
+from agentic_sql.saga.messages import (
     KnowledgeBaseCheckedMessage, TablesCheckedMessage,
     SagaErrorMessage, message_from_dict
 )
-from core.saga.publisher import SagaPublisher
+from agentic_sql.saga.publisher import SagaPublisher
 from core.services.database_service import database_service
 from account.models import User
 from core.database.session import get_db
@@ -81,7 +81,7 @@ def process_tables_check(ch, method, properties, body):
             publisher.publish_query_generation(next_message)
             
             # Update progress in store
-            from core.saga.state_store import get_saga_state_store
+            from agentic_sql.saga.state_store import get_saga_state_store
             saga_store = get_saga_state_store()
             saga_store.update_result(message.saga_id, {
                 "call_stack": [entry.to_dict() for entry in next_message.call_stack]
@@ -132,7 +132,7 @@ def process_tables_check(ch, method, properties, body):
 
 def start_tables_consumer(host: str = None):
     """Start the tables check consumer"""
-    from core.saga.publisher import SagaPublisher
+    from agentic_sql.saga.publisher import SagaPublisher
     
     host = host or "localhost"
     

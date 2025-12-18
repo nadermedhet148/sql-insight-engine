@@ -8,7 +8,7 @@ import pika
 import json
 import os
 from typing import Optional
-from core.saga.messages import SagaBaseMessage, message_to_json
+from agentic_sql.saga.messages import SagaBaseMessage, message_to_json
 
 
 class SagaPublisher:

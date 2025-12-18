@@ -8,11 +8,11 @@ import pika
 import json
 import time
 from typing import List
-from core.saga.messages import (
+from agentic_sql.saga.messages import (
     QueryInitiatedMessage, KnowledgeBaseCheckedMessage,
     SagaErrorMessage, message_from_dict
 )
-from core.saga.publisher import SagaPublisher
+from agentic_sql.saga.publisher import SagaPublisher
 from core.gemini_client import GeminiClient
 from core.infra.chroma_factory import ChromaClientFactory
 
@@ -102,7 +102,7 @@ def process_knowledge_base_check(ch, method, properties, body):
         publisher.publish_tables_check(next_message)
         
         # Update progress in store
-        from core.saga.state_store import get_saga_state_store
+        from agentic_sql.saga.state_store import get_saga_state_store
         saga_store = get_saga_state_store()
         saga_store.update_result(message.saga_id, {
             "call_stack": [entry.to_dict() for entry in next_message.call_stack]
@@ -149,7 +149,7 @@ def process_knowledge_base_check(ch, method, properties, body):
 
 
 def start_knowledge_base_consumer(host: str = None):
-    from core.saga.publisher import SagaPublisher
+    from agentic_sql.saga.publisher import SagaPublisher
     
     host = host or "localhost"
     

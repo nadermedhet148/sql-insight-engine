@@ -8,12 +8,12 @@ This is the final step in the saga.
 import pika
 import json
 import time
-from core.saga.messages import (
+from agentic_sql.saga.messages import (
     QueryExecutedMessage, ResultFormattedMessage,
     SagaErrorMessage, message_from_dict
 )
-from core.saga.publisher import SagaPublisher
-from core.saga.state_store import get_saga_state_store
+from agentic_sql.saga.publisher import SagaPublisher
+from agentic_sql.saga.state_store import get_saga_state_store
 from core.gemini_client import GeminiClient
 
 # Initialize client
@@ -178,7 +178,7 @@ def process_result_formatting(ch, method, properties, body):
 
 def start_result_formatter_consumer(host: str = None):
     """Start the result formatter consumer"""
-    from core.saga.publisher import SagaPublisher
+    from agentic_sql.saga.publisher import SagaPublisher
     
     host = host or "localhost"
     
