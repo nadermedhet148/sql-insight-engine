@@ -16,13 +16,18 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from src.database.models import Base
+# Append src to sys.path
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'src'))
+
+# Add your model's MetaData object here for 'autogenerate' support
+from core.database.session import Base
+import account.models  # Register models
 target_metadata = Base.metadata
+
+# Override sqlalchemy.url from environment variable if present
+db_url = os.getenv("DATABASE_URL")
+if db_url:
+    config.set_main_option("sqlalchemy.url", db_url)
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

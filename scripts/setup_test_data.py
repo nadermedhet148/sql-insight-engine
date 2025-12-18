@@ -131,55 +131,7 @@ def setup_test_database():
     finally:
         session.close()
 
-from fastapi.testclient import TestClient
-from api import app
-
-# Initialize Client
-client = TestClient(app)
-
-def setup_metadata_user():
-    print("Connecting to Metadata Database...")
-    # Clean slate for Metadata DB to apply schema changes
-    print("Dropping existing metadata tables...")
-    MetadataBase.metadata.drop_all(MetadataEngine)
-    MetadataBase.metadata.create_all(MetadataEngine)
-    
-    try:
-        # Create Metadata User via API
-        account_id = "test_account_01"
-        print(f"Creating user {account_id} via API...")
-        
-        user_payload = {"account_id": account_id, "quota": 1000}
-        response = client.post("/users/", json=user_payload)
-        
-        if response.status_code == 200:
-            user_data = response.json()
-            user_id = user_data["id"]
-            print(f"User created with ID: {user_id}")
-            
-            # Link User to Test Database via API
-            print("Creating DB Config for user via API...")
-            config_payload = {
-                "db_type": "postgresql",
-                "host": "localhost",
-                "port": 5433,
-                "db_name": "external_test_db",
-                "username": "test_user",
-                "password": "test_password"
-            }
-            config_response = client.post(f"/users/{user_id}/config", json=config_payload)
-            
-            if config_response.status_code == 200:
-                print("Metadata User linked to Test Database successfully.")
-            else:
-                print(f"Failed to create config: {config_response.text}")
-        else:
-             print(f"Failed to create user: {response.text}")
-
-    except Exception as e:
-        print(f"Error setting up Metadata User: {e}")
 
 if __name__ == "__main__":
     setup_test_database()
-    print("-" * 20)
-    setup_metadata_user()
+ 

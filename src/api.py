@@ -30,6 +30,9 @@ from account import api as users
 from knowledgebase import api as knowledgebase
 from knowledgebase.consumer import KnowledgeBaseActionConsumer
 
+# Database Initialization (Ensures models are registered)
+import account.models 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: Start all Saga consumers
