@@ -22,6 +22,8 @@ try:
 except Exception as e:
     print(f"Warning checking Minio bucket: {e}")
 
+from core.services.knowledge_service import index_text_content, BUCKET_NAME, QUEUE_NAME
+
 @router.post("/", response_model=Any)
 async def add_document(
     account_id: str = Form(...),
@@ -30,33 +32,11 @@ async def add_document(
     if not (file.filename.lower().endswith(".md") or file.filename.lower().endswith(".txt")):
         raise HTTPException(status_code=400, detail="Only Markdown (.md) and Text (.txt) files are allowed.")
 
-    client = get_minio_client()
-    import os
-    mq_host = os.getenv("RABBITMQ_HOST", "localhost")
-    producer = BaseProducer(queue_name=QUEUE_NAME, host=mq_host)
-    
     try:
-        object_name = f"{account_id}/{file.filename}"
-        
         content = await file.read()
-        file_data = io.BytesIO(content)
-        file_size = len(content)
-
-        client.put_object(
-            BUCKET_NAME,
-            object_name,
-            file_data,
-            file_size,
-            content_type=file.content_type or "text/plain"
-        )
+        text_content = content.decode('utf-8')
         
-        message = {
-            "action": "add",
-            "account_id": account_id,
-            "object_name": object_name,
-            "filename": file.filename
-        }
-        producer.publish(json.dumps(message))
+        object_name = index_text_content(account_id, file.filename, text_content)
         
         return {
             "status": "queued", 
@@ -64,16 +44,9 @@ async def add_document(
             "object_name": object_name
         }
         
-    except S3Error as e:
-        raise HTTPException(status_code=500, detail=f"Minio Error: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-    finally:
-        # Ensure connection is closed
-        try:
-            producer.close()
-        except:
-            pass
+
 
 @router.delete("/", response_model=Any)
 async def delete_document(

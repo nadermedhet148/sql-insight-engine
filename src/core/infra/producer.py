@@ -1,9 +1,15 @@
 import pika
 
 class BaseProducer:
-    def __init__(self, queue_name: str, host: str = 'localhost'):
+    def __init__(self, queue_name: str, host: str = None):
+        import os
         self.queue_name = queue_name
-        self.host = host
+        self.host = host or os.getenv("RABBITMQ_HOST", "localhost")
+        
+        # Fallback for host development
+        if self.host == "rabbitmq" and not os.path.exists('/.dockerenv'):
+            self.host = "localhost"
+            
         self.connection = pika.BlockingConnection(
             pika.ConnectionParameters(host=self.host)
         )

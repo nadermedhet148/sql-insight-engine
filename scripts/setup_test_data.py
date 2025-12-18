@@ -5,10 +5,11 @@ from sqlalchemy.orm import sessionmaker, relationship, declarative_base
 from sqlalchemy.sql import func
 
 # Ensure src is in python path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+src_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+sys.path.append(src_path)
 
-from database.session import SessionLocal as MetadataSessionLocal, engine as MetadataEngine, Base as MetadataBase
-from database.models import User as MetadataUser, UserDBConfig
+from core.database.session import SessionLocal as MetadataSessionLocal, engine as MetadataEngine, Base as MetadataBase
+from account.models import User as MetadataUser, UserDBConfig
 
 # --- Configuration for External Test DB ---
 TEST_DB_URL = "postgresql://test_user:test_password@localhost:5433/external_test_db"
@@ -161,6 +162,7 @@ def setup_metadata_user():
             config_payload = {
                 "db_type": "postgresql",
                 "host": "localhost",
+                "port": 5433,
                 "db_name": "external_test_db",
                 "username": "test_user",
                 "password": "test_password"
@@ -178,6 +180,6 @@ def setup_metadata_user():
         print(f"Error setting up Metadata User: {e}")
 
 if __name__ == "__main__":
-    # setup_test_database()
-    # print("-" * 20)
-    # setup_metadata_user()
+    setup_test_database()
+    print("-" * 20)
+    setup_metadata_user()

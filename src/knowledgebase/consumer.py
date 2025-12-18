@@ -42,8 +42,9 @@ class KnowledgeBaseActionConsumer(BaseConsumer):
         account_id = data.get("account_id")
         object_name = data.get("object_name")
         filename = data.get("filename")
+        collection_name = data.get("collection_name", "knowledgebase")
         
-        print(f"Processing ADD for object: {object_name}")
+        print(f"Processing ADD for object: {object_name} into collection: {collection_name}")
         
         try:
             response = self.minio_client.get_object("knowledgebase", object_name)
@@ -86,13 +87,14 @@ class KnowledgeBaseActionConsumer(BaseConsumer):
                 
         if ids:
             try:
-                self.collection.add(
+                collection = self.chroma_client.get_or_create_collection(name=collection_name)
+                collection.add(
                     ids=ids,
                     documents=documents,
                     embeddings=embeddings,
                     metadatas=metadatas
                 )
-                print(f"Successfully indexed {len(ids)} chunks for {object_name}")
+                print(f"Successfully indexed {len(ids)} chunks for {object_name} in {collection_name}")
             except Exception as e:
                 print(f"Error indexing to ChromaDB: {e}")
         else:
@@ -100,13 +102,15 @@ class KnowledgeBaseActionConsumer(BaseConsumer):
 
     def handle_delete(self, data):
         object_name = data.get("object_name")
-        print(f"Processing DELETE for object: {object_name}")
+        collection_name = data.get("collection_name", "knowledgebase")
+        print(f"Processing DELETE for object: {object_name} from collection: {collection_name}")
         
         try:
-            self.collection.delete(
+            collection = self.chroma_client.get_or_create_collection(name=collection_name)
+            collection.delete(
                 where={"object_name": object_name}
             )
-            print(f"Deleted documents for {object_name}")
+            print(f"Deleted documents for {object_name} from {collection_name}")
         except Exception as e:
             print(f"Error deleting from ChromaDB: {e}")
 

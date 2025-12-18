@@ -6,6 +6,11 @@ def get_minio_client():
     # In a real app, use env vars for host/creds
     minio_host = os.getenv("MINIO_HOST", "localhost")
     minio_port = os.getenv("MINIO_PORT", "9000")
+    
+    # Fallback to localhost if running outside docker and host is set to service name
+    if minio_host == "minio" and not os.path.exists('/.dockerenv'):
+        minio_host = "localhost"
+    
     minio_user = os.getenv("MINIO_ROOT_USER", "minioadmin")
     minio_password = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
     

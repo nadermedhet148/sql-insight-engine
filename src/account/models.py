@@ -22,6 +22,7 @@ class UserDBConfig(Base):
     db_type = Column(String, nullable=False, default="postgresql")
     host = Column(String, nullable=False)
     db_name = Column(String, nullable=False)
+    port = Column(Integer, nullable=True, default=5432)
     username = Column(String, nullable=False)
     password = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
