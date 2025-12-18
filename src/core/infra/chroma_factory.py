@@ -40,20 +40,14 @@ class ChromaClientFactory:
                 )
         else:
             import chromadb
-            from chromadb.config import Settings
             
             host = os.getenv("CHROMA_HOST", "localhost")
             port = os.getenv("CHROMA_PORT", "8000")
-            user = os.getenv("CHROMA_USER", "admin")
-            password = os.getenv("CHROMA_PASSWORD", "password")
 
-            print(f"Connecting to ChromaDB Self-Hosted at {host}:{port} with user {user}")
+            print(f"Connecting to ChromaDB Self-Hosted at {host}:{port}")
             
+            # Simple connection without authentication
             return chromadb.HttpClient(
                 host=host,
-                port=int(port),
-                settings=Settings(
-                    chroma_client_auth_provider="chromadb.auth.basic.BasicAuthClientProvider",
-                    chroma_client_auth_credentials=f"{user}:{password}"
-                )
+                port=int(port)
             )

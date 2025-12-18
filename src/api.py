@@ -25,6 +25,7 @@ if os.path.exists(env_path):
 import threading
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from account import api as users
 from knowledgebase import api as knowledgebase
 from knowledgebase.consumer import KnowledgeBaseActionConsumer
@@ -46,6 +47,15 @@ async def lifespan(app: FastAPI):
     # Shutdown logic if needed
     
 app = FastAPI(title="SQL Insight Engine API", lifespan=lifespan)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, replace with specific origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(users.router)
 app.include_router(knowledgebase.router)

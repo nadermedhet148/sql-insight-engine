@@ -30,19 +30,12 @@ services:
       - insight_network
 
   chromadb:
-    image: chromadb/chroma:0.4.24
+    image: chromadb/chroma:latest
     container_name: chromadb
     ports:
       - "8000:8000"
-    environment:
-      - CHROMA_SERVER_AUTHN_PROVIDER=chromadb.auth.basic.BasicAuthServerProvider
-      - CHROMA_SERVER_AUTH_PROVIDER=chromadb.auth.basic.BasicAuthServerProvider
-      - CHROMA_SERVER_AUTHN_CREDENTIALS_FILE=/chroma/server.htpasswd
-      - CHROMA_SERVER_AUTH_CREDENTIALS_FILE=/chroma/server.htpasswd
-      - CHROMA_SERVER_AUTH_CREDENTIALS_PROVIDER=chromadb.auth.providers.HtpasswdFileServerAuthCredentialsProvider
     volumes:
       - chroma_data:/chroma/chroma
-      - ./chroma_config/server.htpasswd:/chroma/server.htpasswd
     networks:
       - insight_network
 

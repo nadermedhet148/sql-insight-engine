@@ -12,7 +12,7 @@ else:
     genai.configure(api_key=API_KEY)
 
 class GeminiClient:
-    def __init__(self, model_name="gemini-pro", embedding_model="models/embedding-001"):
+    def __init__(self, model_name="models/gemini-2.5-flash", embedding_model="models/text-embedding-004"):
         self.model = genai.GenerativeModel(model_name)
         self.embedding_model = embedding_model
 

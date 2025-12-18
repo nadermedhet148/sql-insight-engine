@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Any, Optional
 from sqlalchemy.orm import Session
 from core.database.session import get_db
-from account.models import User, UserDBConfig
+from account.models import User, UserDBConfig, UsageLog
 
 router = APIRouter(
     prefix="/users",
@@ -13,7 +13,7 @@ router = APIRouter(
 
 class UserCreate(BaseModel):
     account_id: str
-    quota: int = 100
+    quota: int = 100  # Default quota, not required from frontend
 
 class UserDBConfigCreate(BaseModel):
     db_type: str = "postgresql"
@@ -102,4 +102,72 @@ def add_db_config(user_id: int, config: UserDBConfigCreate, db: Session = Depend
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
+
+class NaturalLanguageQueryRequest(BaseModel):
+    question: str
+
+class QueryResponse(BaseModel):
+    success: bool
+    generated_sql: Optional[str] = None
+    raw_results: Optional[str] = None
+    formatted_response: Optional[str] = None
+    reasoning: Optional[str] = None
+    error: Optional[str] = None
+
+from core.services.query_service import query_service
+
+@router.post("/{user_id}/query", response_model=QueryResponse)
+def query_user_database(user_id: int, request: NaturalLanguageQueryRequest, db: Session = Depends(get_db)):
+    """
+    Process a natural language question about the user's data.
+    
+    Workflow:
+    1. Retrieve schema context from knowledge base
+    2. Generate SQL query using LLM
+    3. Execute query on user's database
+    4. Format results using LLM
+    """
+    # Get user and verify existence
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check if user has database configuration
+    if not user.db_config:
+        raise HTTPException(status_code=400, detail="User has no database configured")
+    
+    # Check quota (optional - track usage)
+    if user.quota <= 0:
+        raise HTTPException(status_code=429, detail="Query quota exceeded")
+    
+    try:
+        # Process the natural language query
+        result = query_service.process_nl_query(
+            account_id=user.account_id,
+            db_config=user.db_config,
+            question=request.question
+        )
+        
+        # Log usage
+        usage_log = UsageLog(
+            user_id=user_id,
+            query_text=request.question
+        )
+        db.add(usage_log)
+        
+        # Decrement quota
+        user.quota -= 1
+        db.commit()
+        
+        return QueryResponse(
+            success=result.success,
+            generated_sql=result.generated_sql,
+            raw_results=result.raw_results,
+            formatted_response=result.formatted_response,
+            reasoning=result.reasoning,
+            error=result.error
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Query processing failed: {str(e)}")
 
