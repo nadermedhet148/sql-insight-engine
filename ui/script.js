@@ -367,11 +367,17 @@ async function submitQuery() {
     loadingState.style.display = 'block';
     submitBtn.disabled = true;
 
-    // Animate loading steps
-    animateLoadingSteps();
+    // Reset loading steps visually
+    ['step1Load', 'step2Load', 'step3Load', 'step4Load'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.classList.remove('active', 'completed');
+        }
+    });
 
     try {
-        const response = await fetch(`${API_BASE_URL}/users/${userData.userId}/query`, {
+        // Call async endpoint
+        const response = await fetch(`${API_BASE_URL}/users/${userData.userId}/query/async`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question }),
@@ -379,48 +385,137 @@ async function submitQuery() {
 
         const data = await response.json();
 
-        // Hide loading state
-        loadingState.style.display = 'none';
-        submitBtn.disabled = false;
-
-        if (data.success) {
-            displayResults(data);
-        } else {
-            displayError(data.error || 'An unknown error occurred');
+        if (!response.ok) {
+            throw new Error(data.detail || 'Failed to submit query');
         }
+
+        // Got saga_id, now poll for results
+        const sagaId = data.saga_id;
+        console.log(`Query submitted. Saga ID: ${sagaId}`);
+        console.log(`Polling for results...`);
+
+        // Poll for results
+        await pollForResults(sagaId);
+
     } catch (error) {
         loadingState.style.display = 'none';
         submitBtn.disabled = false;
-        displayError(`Failed to connect to the server: ${error.message}`);
+        displayError(`Failed to submit query: ${error.message}`);
     }
 }
 
-function animateLoadingSteps() {
-    const steps = ['step1Load', 'step2Load', 'step3Load', 'step4Load'];
-    let currentStepIdx = 0;
+async function pollForResults(sagaId, maxAttempts = 60) {
+    const loadingState = document.getElementById('loadingState');
+    const submitBtn = document.getElementById('submitBtn');
 
-    // Reset all steps
-    steps.forEach(stepId => {
-        document.getElementById(stepId).classList.remove('active');
-    });
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+            // Wait before polling (except first attempt)
+            if (attempt > 0) {
+                await new Promise(resolve => setTimeout(resolve, 1000)); // Poll every 1 second
+            }
 
-    // Animate steps
-    const interval = setInterval(() => {
-        if (currentStepIdx < steps.length) {
-            document.getElementById(steps[currentStepIdx]).classList.add('active');
-            currentStepIdx++;
-        } else {
-            clearInterval(interval);
+            const response = await fetch(`${API_BASE_URL}/users/${userData.userId}/query/status/${sagaId}`);
+            const statusData = await response.json();
+
+            console.log(`Poll attempt ${attempt + 1}: status = ${statusData.status}`);
+
+            // Update progress steps if call stack is available
+            if (statusData.result && statusData.result.call_stack) {
+                updateLoadingProgress(statusData.result.call_stack);
+            }
+
+            if (statusData.status === 'completed') {
+                // Query completed successfully
+                loadingState.style.display = 'none';
+                submitBtn.disabled = false;
+
+                if (statusData.result && statusData.result.success) {
+                    displayResults(statusData.result);
+                } else {
+                    displayError('Query completed but no results available');
+                }
+                return;
+            } else if (statusData.status === 'error') {
+                // Query failed
+                loadingState.style.display = 'none';
+                submitBtn.disabled = false;
+
+                const errorMsg = statusData.result?.error_message || statusData.message || 'Query processing failed';
+                displayError(errorMsg, statusData.result?.call_stack);
+                return;
+            }
+
+            // Still pending, continue polling
+        } catch (error) {
+            console.error(`Polling error: ${error.message}`);
         }
-    }, 800);
+    }
+
+    // Timeout
+    loadingState.style.display = 'none';
+    submitBtn.disabled = false;
+    displayError('Query processing timeout. Please try again.');
 }
+
+function updateLoadingProgress(callStack) {
+    const stepMapping = {
+        'check_knowledge_base': 'step1Load',
+        'check_tables': 'step1Load',
+        'generate_query': 'step2Load',
+        'execute_query': 'step3Load',
+        'format_result': 'step4Load'
+    };
+
+    callStack.forEach(step => {
+        const elementId = stepMapping[step.step_name];
+        if (elementId && step.status === 'success') {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.classList.add('completed');
+                element.classList.add('active'); // Keep it visible
+            }
+        }
+    });
+}
+
 
 function displayResults(data) {
     // Display formatted response
     document.getElementById('formattedResponse').innerHTML = formatMarkdown(data.formatted_response);
 
-    // Display reasoning
-    document.getElementById('reasoningContent').textContent = data.reasoning || 'No reasoning available';
+    // Display reasoning - now includes call stack
+    let reasoningText = '';
+
+    if (data.call_stack && data.call_stack.length > 0) {
+        reasoningText = '=== Call Stack ===\n\n';
+        data.call_stack.forEach((step, index) => {
+            reasoningText += `${index + 1}. ${step.step_name}\n`;
+            reasoningText += `   Status: ${step.status}\n`;
+            reasoningText += `   Time: ${step.timestamp}\n`;
+            if (step.duration_ms != null) {
+                reasoningText += `   Duration: ${step.duration_ms.toFixed(2)}ms\n`;
+            }
+
+            // Check for LLM Reasoning in metadata
+            if (step.metadata && step.metadata.llm_reasoning) {
+                reasoningText += `   LLM Thought: ${step.metadata.llm_reasoning}\n`;
+            } else if (step.metadata && Object.keys(step.metadata).length > 0) {
+                reasoningText += `   Metadata: ${JSON.stringify(step.metadata, null, 2)}\n`;
+            }
+            reasoningText += '\n';
+        });
+
+        if (data.total_duration_ms) {
+            reasoningText += `\nTotal Duration: ${data.total_duration_ms.toFixed(2)}ms\n`;
+        }
+    } else if (data.reasoning) {
+        reasoningText = data.reasoning;
+    } else {
+        reasoningText = 'No reasoning available';
+    }
+
+    document.getElementById('reasoningContent').textContent = reasoningText;
 
     // Display SQL query
     document.getElementById('sqlQuery').textContent = data.generated_sql || 'No SQL query generated';
@@ -440,8 +535,20 @@ function displayResults(data) {
     document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-function displayError(message) {
-    document.getElementById('errorMessage').textContent = message;
+function displayError(message, callStack = null) {
+    let errorText = message;
+
+    if (callStack && callStack.length > 0) {
+        errorText += '\n\n=== Call Stack ===\n';
+        callStack.forEach((step, index) => {
+            errorText += `\n${index + 1}. ${step.step_name} - ${step.status}`;
+            if (step.duration_ms) {
+                errorText += ` (${step.duration_ms.toFixed(2)}ms)`;
+            }
+        });
+    }
+
+    document.getElementById('errorMessage').textContent = errorText;
     document.getElementById('errorState').style.display = 'block';
     document.getElementById('errorState').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }

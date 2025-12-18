@@ -65,11 +65,14 @@ services:
       - "8001:8000"
     env_file:
       - .env
+    environment:
+      - REDIS_HOST=redis
     depends_on:
       - metadata_store
       - chromadb
       - minio
       - rabbitmq
+      - redis
     networks:
       - insight_network
 
@@ -82,6 +85,14 @@ services:
     ports:
       - "5672:5672"
       - "15672:15672"
+    networks:
+      - insight_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
     networks:
       - insight_network
 

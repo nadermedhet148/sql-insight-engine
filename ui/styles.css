@@ -687,6 +687,17 @@ body {
     border: 1px solid var(--primary);
 }
 
+.step.completed {
+    opacity: 1;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid var(--success);
+}
+
+.step.completed .step-icon {
+    background: var(--success);
+    color: white;
+}
+
 .step-icon {
     width: 32px;
     height: 32px;

@@ -32,15 +32,50 @@ from knowledgebase.consumer import KnowledgeBaseActionConsumer
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    # Startup: Start all Saga consumers
+    from core.saga.consumers import (
+        start_knowledge_base_consumer,
+        start_tables_consumer,
+        start_query_generator_consumer,
+        start_query_executor_consumer,
+        start_result_formatter_consumer
+    )
+    
+    consumers = [
+        ("Knowledge Base", start_knowledge_base_consumer),
+        ("Tables Check", start_tables_consumer),
+        ("Query Generator", start_query_generator_consumer),
+        ("Query Executor", start_query_executor_consumer),
+        ("Result Formatter", start_result_formatter_consumer)
+    ]
+    
+    threads = []
+    mq_host = os.getenv("RABBITMQ_HOST", "localhost")
+    
+    print("\n[LIFESPAN] Starting Saga Consumers...")
+    for name, starter_func in consumers:
+        try:
+            t = threading.Thread(
+                target=starter_func,
+                args=(mq_host,),
+                name=f"SagaConsumer-{name}",
+                daemon=True
+            )
+            t.start()
+            threads.append(t)
+            print(f"[LIFESPAN] ✓ Started {name} Consumer")
+        except Exception as e:
+            print(f"[LIFESPAN] ✗ Failed to start {name} Consumer: {e}")
+    
+    # Also keep the legacy KB consumer if needed, but the new saga replaces its role for queries
     try:
-        mq_host = os.getenv("RABBITMQ_HOST", "localhost")
-        consumer = KnowledgeBaseActionConsumer(host=mq_host)
-        t = threading.Thread(target=consumer.start_consuming, daemon=True)
-        t.start()
-        print(f"Started KnowledgeBaseActionConsumer on thread {t.name}")
+        from knowledgebase.consumer import KnowledgeBaseActionConsumer
+        legacy_consumer = KnowledgeBaseActionConsumer(host=mq_host)
+        t_legacy = threading.Thread(target=legacy_consumer.start_consuming, daemon=True, name="LegacyKBConsumer")
+        t_legacy.start()
+        print(f"[LIFESPAN] ✓ Started Legacy KnowledgeBaseActionConsumer")
     except Exception as e:
-        print(f"Failed to start consumer: {e}")
+        print(f"[LIFESPAN] ⚠ Could not start legacy KB consumer: {e}")
     
     yield
     
@@ -58,6 +93,11 @@ app.add_middleware(
 )
 
 app.include_router(users.router)
+
+# Include async saga routes
+from account import api_async
+app.include_router(api_async.router, prefix="/users", tags=["async-queries"])
+
 app.include_router(knowledgebase.router)
 
 @app.get("/health")
