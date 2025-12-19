@@ -200,6 +200,19 @@ def build_connection_url(db_type: str, host: str, port: int, db_name: str, usern
         return f"postgresql://{username}:{password}@{host}:{port or 5432}/{db_name}"
 
 
-def create_mcp_server(db_type: str, host: str, port: int, db_name: str, username: str, password: str) -> PostgresMCPServer:
-    db_url = build_connection_url(db_type, host, port, db_name, username, password)
-    return PostgresMCPServer(db_url, server_name=f"db-{db_name}")
+if __name__ == "__main__":
+    import os
+    import sys
+    
+    # Get DB URL from env or fallback to argument
+    db_url = os.getenv("MCP_DB_URL")
+    if not db_url:
+        print("Error: MCP_DB_URL environment variable is required", file=sys.stderr)
+        sys.exit(1)
+        
+    server = PostgresMCPServer(db_url)
+    
+    async def main():
+        await server.run()
+        
+    asyncio.run(main())

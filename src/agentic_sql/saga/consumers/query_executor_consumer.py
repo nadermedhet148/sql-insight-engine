@@ -99,7 +99,8 @@ def process_query_execution(ch, method, properties, body):
             step_name="execute_query",
             status="success",
             duration_ms=duration_ms,
-            result_lines=len(result_lines)
+            result_lines=len(result_lines),
+            sql=message.generated_sql
         )
         
         # Publish to next step

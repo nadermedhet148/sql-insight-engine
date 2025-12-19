@@ -71,7 +71,8 @@ def process_tables_check(ch, method, properties, body):
                 step_name="check_tables",
                 status="success",
                 duration_ms=duration_ms,
-                tables_found=len(available_tables)
+                tables_found=len(available_tables),
+                available_tables=available_tables
             )
             
             print(f"[SAGA STEP 2] ✓ Found {len(available_tables)} tables in {duration_ms:.2f}ms")

@@ -17,37 +17,47 @@ from agentic_sql.saga.state_store import get_saga_state_store
 from core.gemini_client import GeminiClient
 
 # Initialize client
-gemini_client = GeminiClient()
+gemini_client = GeminiClient(model_name="models/gemini-2.0-flash")
 
 def format_results_logic(question: str, sql_query: str, raw_results: str) -> str:
     """Logic to format results using Gemini LLM"""
     try:
-        prompt = f"""You are a data analyst assistant. Format the following query results into a clear, natural language response.
+        prompt = f"""You are a Senior Business Intelligence Consultant. Your task is to transform technical database results into a professional executive summary.
 
-        Original Question: "{question}"
-
-        SQL Query Executed:
+        USER QUESTION: "{question}"
+        
+        DATA CONTEXT:
+        The following data was retrieved from the live production database using this logic:
         {sql_query}
 
-        Query Results:
+        RAW DATABASE RESULTS:
         {raw_results}
 
-        Instructions:
-        - Provide a clear, concise answer to the original question
-        - If the results contain numeric data, highlight the key insights
-        - If it's a list, summarize the top items
-        - If there are no results, explain that clearly
-        - Keep the response conversational and easy to understand
-        - Do not include technical jargon unless necessary
+        INSTRUCTIONS FOR YOUR RESPONSE:
+        1.  **Business Language**: Use domain-specific business terms (e.g., "Revenue Growth", "Customer Retention", "Market Share") rather than technical column names.
+        2.  **Executive Summary**: Start with the most important finding or "bottom line" result.
+        3.  **Formatting**: Use clean bullet points or short paragraphs. Avoid any CSV-style formatting or markdown tables in the final text.
+        4.  **No Jargon**: Never mention SQL, Joins, or database technicalities in your final answer.
 
-        Response:"""
+        PROFESSIONAL BUSINESS RESPONSE:"""
         
-        formatted_response = gemini_client.generate_content(prompt)
-        return formatted_response.strip()
+        response = gemini_client.generate_content(prompt)
+        formatted_response = response.text.strip() if response else ""
+        
+        # Capture usage metadata
+        usage = {}
+        if hasattr(response, "usage_metadata"):
+            usage = {
+                "prompt_token_count": response.usage_metadata.prompt_token_count,
+                "candidates_token_count": response.usage_metadata.candidates_token_count,
+                "total_token_count": response.usage_metadata.total_token_count
+            }
+            
+        return formatted_response, prompt, usage
         
     except Exception as e:
         print(f"[SAGA STEP 5] Error formatting results: {e}")
-        return f"Here are the results:\n\n{raw_results}"
+        return f"Here are the results:\n\n{raw_results}", prompt, {}
 
 
 def process_result_formatting(ch, method, properties, body):
@@ -64,7 +74,7 @@ def process_result_formatting(ch, method, properties, body):
         
         # Logic moved from QueryService
         print(f"[SAGA STEP 5] Formatting results using Gemini LLM...")
-        formatted_response = format_results_logic(
+        formatted_response, llm_prompt, llm_usage = format_results_logic(
             message.question,
             message.generated_sql,
             message.raw_results
@@ -72,6 +82,8 @@ def process_result_formatting(ch, method, properties, body):
         
         duration_ms = (time.time() - start_time) * 1000
         
+        print(f"[SAGA STEP 5] Formatting Reasoning: Summarizing data for business relevance")
+        print(f"[SAGA STEP 5] Step Token Usage: {llm_usage}")
         print(f"[SAGA STEP 5] ✓ Results formatted successfully in {duration_ms:.2f}ms")
         
         # Create final result message
@@ -95,19 +107,24 @@ def process_result_formatting(ch, method, properties, body):
             step_name="format_result",
             status="success",
             duration_ms=duration_ms,
-            response_length=len(formatted_response)
+            response_length=len(formatted_response),
+            prompt=llm_prompt,
+            usage=llm_usage
         )
         
-        # Calculate total saga duration
+        # Calculate total saga duration and tokens
         total_duration = 0
+        total_tokens = 0
         for entry in final_message.call_stack:
             if entry.duration_ms:
                 total_duration += entry.duration_ms
+            if entry.metadata and "usage" in entry.metadata:
+                total_tokens += entry.metadata["usage"].get("total_token_count", 0)
         
         print(f"[SAGA STEP 5] 🎉 SAGA COMPLETED SUCCESSFULLY!")
         print(f"[SAGA STEP 5] Total duration: {total_duration:.2f}ms")
+        print(f"[SAGA STEP 5] Total tokens used: {total_tokens}")
         
-        # Store final result in result store
         result_dict = {
             "success": True,
             "saga_id": message.saga_id,
@@ -117,6 +134,7 @@ def process_result_formatting(ch, method, properties, body):
             "formatted_response": formatted_response,
             "call_stack": [entry.to_dict() for entry in final_message.call_stack],
             "total_duration_ms": total_duration,
+            "total_tokens": total_tokens,
             "user_id": message.user_id,
             "account_id": message.account_id
         }

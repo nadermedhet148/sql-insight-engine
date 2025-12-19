@@ -488,26 +488,54 @@ function displayResults(data) {
     let reasoningText = '';
 
     if (data.call_stack && data.call_stack.length > 0) {
-        reasoningText = '=== Call Stack ===\n\n';
+        reasoningText = '';
         data.call_stack.forEach((step, index) => {
-            reasoningText += `${index + 1}. ${step.step_name}\n`;
-            reasoningText += `   Status: ${step.status}\n`;
-            reasoningText += `   Time: ${step.timestamp}\n`;
+            const stepTitle = step.step_name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+            reasoningText += `【 STEP ${index + 1}: ${stepTitle} 】\n`;
+            reasoningText += `❯ Status: ${step.status.toUpperCase()}\n`;
             if (step.duration_ms != null) {
-                reasoningText += `   Duration: ${step.duration_ms.toFixed(2)}ms\n`;
+                reasoningText += `❯ Duration: ${step.duration_ms.toFixed(2)}ms\n`;
             }
 
-            // Check for LLM Reasoning in metadata
-            if (step.metadata && step.metadata.llm_reasoning) {
-                reasoningText += `   LLM Thought: ${step.metadata.llm_reasoning}\n`;
-            } else if (step.metadata && Object.keys(step.metadata).length > 0) {
-                reasoningText += `   Metadata: ${JSON.stringify(step.metadata, null, 2)}\n`;
+            // Render Metadata based on step type
+            if (step.metadata) {
+                const meta = step.metadata;
+
+                if (meta.prompt) {
+                    reasoningText += `\n--- LLM PROMPT ---\n${meta.prompt}\n`;
+                }
+
+                if (meta.llm_reasoning) {
+                    reasoningText += `\n--- LLM REASONING ---\n${meta.llm_reasoning}\n`;
+                }
+
+                if (meta.tools_used && meta.tools_used.length > 0) {
+                    reasoningText += `\n--- TOOLS USED ---\n`;
+                    meta.tools_used.forEach(tool => {
+                        reasoningText += `  • ${tool.tool}(${JSON.stringify(tool.args)})\n`;
+                    });
+                }
+
+                if (meta.available_tables) {
+                    reasoningText += `\n--- TABLES FOUND ---\n${meta.available_tables.join(', ')}\n`;
+                }
+
+                if (meta.sql) {
+                    reasoningText += `\n--- SQL EXECUTED ---\n${meta.sql}\n`;
+                }
+
+                if (meta.usage) {
+                    reasoningText += `\n--- TOKEN USAGE ---\n`;
+                    reasoningText += `  • Prompt: ${meta.usage.prompt_token_count}\n`;
+                    reasoningText += `  • Response: ${meta.usage.candidates_token_count}\n`;
+                    reasoningText += `  • Total: ${meta.usage.total_token_count}\n`;
+                }
             }
-            reasoningText += '\n';
+            reasoningText += '\n' + '='.repeat(40) + '\n\n';
         });
 
         if (data.total_duration_ms) {
-            reasoningText += `\nTotal Duration: ${data.total_duration_ms.toFixed(2)}ms\n`;
+            reasoningText += `TOTAL EXECUTION TIME: ${data.total_duration_ms.toFixed(2)}ms\n`;
         }
     } else if (data.reasoning) {
         reasoningText = data.reasoning;
