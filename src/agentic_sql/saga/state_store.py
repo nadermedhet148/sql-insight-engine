@@ -12,11 +12,11 @@ class SagaStateStore:
         self._redis = redis.Redis(host=host, port=port, db=db, decode_responses=True)
         self._ttl_seconds = 3600  # 1 hour TTL
     
-    def store_result(self, saga_id: str, result: dict):
+    def store_result(self, saga_id: str, result: dict, status: Optional[str] = None):
         data = {
             "result": result,
             "timestamp": datetime.utcnow().isoformat(),
-            "status": "completed" if result.get("success", False) else "error"
+            "status": status if status else ("completed" if result.get("success", False) else "error")
         }
         self._redis.setex(f"saga:{saga_id}", self._ttl_seconds, json.dumps(data))
         print(f"[STATE STORE] Stored result for saga {saga_id}")

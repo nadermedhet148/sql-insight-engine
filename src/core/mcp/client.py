@@ -31,7 +31,9 @@ class GenericMCPClient:
             async with stdio_client(self.server_params) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
-                    result = await session.call_tool(tool_name, arguments)
+                    # Filter out None or empty values from arguments to avoid schema validation errors
+                    filtered_args = {k: v for k, v in arguments.items() if v is not None and v != ""}
+                    result = await session.call_tool(tool_name, filtered_args)
                     
                     content_text = ""
                     for content in result.content:

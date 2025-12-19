@@ -33,6 +33,22 @@ def sanitize_for_json(obj):
         return str(obj)
     return obj
 
+def extract_tables_from_sql(sql: str) -> List[str]:
+    """Extract table names from SQL SELECT query"""
+    import re
+    # Match words after FROM or JOIN, ignoring subqueries and common SQL keywords
+    # This is a basic regex-based extraction
+    pattern = r'(?:FROM|JOIN)\s+([a-zA-Z0-9_".]+)'
+    matches = re.findall(pattern, sql, re.IGNORECASE)
+    
+    tables = []
+    for match in matches:
+        # Remove quotes and get the table name (last part of schema.table)
+        table = match.strip().strip('"').strip('`').split('.')[-1].strip('"').strip('`')
+        if table:
+            tables.append(table.lower())
+    return list(set(tables))
+
 def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Dict[str, Any]) -> tuple[str, str, List[Dict]]:
     
     db_url = f"postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}"
@@ -73,11 +89,19 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
     prompt = f"""You are an Agentic SQL Analyst. Your goal is to write a PostgreSQL query for: "{message.question}"
     {business_context_str}
     
+    CRITICAL RULES:
+    1. NEVER ASSUME table or column names. 
+    2. YOU MUST call `describe_table(table_name)` for EVERY table you include in your SQL. If you don't describe it, your answer will be rejected.
+    3. If the question requires data that isn't in any of the available tables, DO NOT invent tables or columns. State clearly that the data is missing.
+    4. Only use the tables listed below as "AVAILABLE REAL TABLES".
+    
+    AVAILABLE REAL TABLES: {", ".join(message.available_tables) if message.available_tables else "NONE"}
+    
     STRATEGY:
-    1. First, list all tables to see what's available.
-    2. Then, use search_relevant_schema and search_business_knowledge to find both the technical schema and any business rules (like definitions of "active", "status" codes, or complex filter logic).
-    3. Use describe_table to get exact column names.
-    4. Generate the SQL query based on both the technical schema and business logic.
+    1. Identify which tables from the available list are likely relevant.
+    2. Use search_relevant_schema and search_business_knowledge to confirm business rules.
+    3. CALL describe_table for each relevant table.
+    4. Write the final SQL query.
     
     Once you have enough information, reply with:
     REASONING: [Your explanation]
@@ -199,6 +223,24 @@ def process_query_generation(ch, method, properties, body):
 
         # Run the synchronous agentic loop
         generated_sql, llm_reasoning, tool_history, llm_prompt, llm_usage, interaction_history = run_agentic_sql_generation(message, db_config_dict)
+        
+        # SQL Table Validation
+        used_tables = extract_tables_from_sql(generated_sql)
+        available_tables_lower = [t.lower() for t in message.available_tables]
+        
+        # Only validate if we actually have tables in the DB
+        invalid_tables = [t for t in used_tables if t not in available_tables_lower]
+        
+        if invalid_tables and message.available_tables:
+            error_msg = f"Hallucination detected! The generated SQL uses tables that do NOT exist in the database: {', '.join(invalid_tables)}. Available tables are: {', '.join(message.available_tables)}"
+            print(f"[SAGA STEP 3] 🛑 {error_msg}")
+            raise Exception(error_msg)
+        
+        # If no tables found at all, but SQL was generated, check if it's a dummy/hallucinated query
+        if not message.available_tables and used_tables:
+            error_msg = "No tables found in your database, but the AI tried to query tables anyway. This usually means the question is irrelevant to your data."
+            print(f"[SAGA STEP 3] 🛑 {error_msg}")
+            raise Exception(error_msg)
         
         duration_ms = (time.time() - start_time) * 1000
         

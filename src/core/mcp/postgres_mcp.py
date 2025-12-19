@@ -94,7 +94,7 @@ class PostgresMCPServer:
             inspector = inspect(engine)
             
             if name == "list_tables":
-                schema = arguments.get("schema", None)
+                schema = arguments.get("schema") or "public"
                 tables = inspector.get_table_names(schema=schema)
                 import sys
                 sys.stderr.write(f"\n[DEBUG MCP] Found raw tables in schema '{schema}': {tables}\n")

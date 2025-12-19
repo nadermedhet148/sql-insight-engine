@@ -14,17 +14,66 @@ from agentic_sql.saga.messages import (
 )
 from agentic_sql.saga.publisher import SagaPublisher
 from core.services.database_service import database_service
+from core.gemini_client import GeminiClient
 from account.models import User
 from core.database.session import get_db
+
+# Initialize Gemini for relevance check
+gemini_client = GeminiClient(model_name="models/gemini-1.5-flash")
 
 
 def get_table_names_logic(db_config) -> List[str]:
     """Logic to retrieve table names from user database"""
     print(f"[SAGA STEP 2] Checking available tables in user database...")
     # database_service.get_table_names returns List[str]
-    available_tables = database_service.get_table_names(db_config)
-    return available_tables
+    try:
+        available_tables = database_service.get_table_names(db_config)
+        return available_tables if isinstance(available_tables, list) else []
+    except Exception as e:
+        print(f"[SAGA STEP 2] Error in get_table_names_logic: {e}")
+        return []
 
+def check_question_relevance(question: str, schema_context: List[str], business_context: List[str], tables: List[str]) -> tuple[bool, str]:
+    """Check if the question is relevant to the available database context"""
+    context_str = "\n".join(schema_context + business_context)
+    tables_str = ", ".join(tables) if tables else "NONE (No tables found in database)"
+    
+    prompt = f"""
+    You are a Gatekeeper for a SQL Query Engine. Your job is to strictly decide if a user's question is relevant to the specific database schema and business context provided below.
+    
+    AVAILABLE TABLES:
+    {tables_str}
+    
+    BUSINESS RULES & SCHEMA FRAGMENTS:
+    {context_str if context_str else "No additional business context found."}
+    
+    USER QUESTION: "{question}"
+    
+    RULES FOR DECISION:
+    1. IRRELEVANT: The question is about general knowledge, sports (unrelated to these tables), entities not in the tables (e.g., "football players" when tables are about "retail orders"), or casual conversation.
+    2. RELEVANT: The question asks for data, statistics, or reports that can be reasonably constructed using the tables and context provided. 
+    3. If there are NO TABLES found, everything is IRRELEVANT unless it's a metadata question.
+    
+    RESPONSE FORMAT (You MUST follow this exactly):
+    DECISION: [RELEVANT/IRRELEVANT]
+    REASON: [A polite, professional explanation of why the question doesn't match the database context. Be specific about what data we HAVE vs what they ASKED.]
+    """
+    
+    try:
+        response = gemini_client.generate_content(prompt)
+        if not response:
+            return True, ""
+            
+        text = response.text
+        is_relevant = "DECISION: RELEVANT" in text
+        reason = ""
+        if "REASON:" in text:
+            reason = text.split("REASON:")[1].strip()
+            
+        return is_relevant, reason
+    except Exception as e:
+        print(f"[SAGA STEP 2] Relevance check failed: {e}")
+        return True, "" # Default to relevant on error to avoid blocking valid queries
 
 def process_tables_check(ch, method, properties, body):
     """Process tables check step"""
@@ -48,6 +97,7 @@ def process_tables_check(ch, method, properties, body):
             
             # Logic moved from QueryService
             available_tables = get_table_names_logic(db_config)
+            print(f"[SAGA STEP 2] Debug available_tables: {available_tables}")
             table_schemas = {name: {"name": name} for name in available_tables}
             
             duration_ms = (time.time() - start_time) * 1000
@@ -79,7 +129,79 @@ def process_tables_check(ch, method, properties, body):
             
             print(f"[SAGA STEP 2] ✓ Found {len(available_tables)} tables in {duration_ms:.2f}ms")
             
-        # Publish to next step
+            if len(available_tables) == 0:
+                error_msg = "No tables were found in the database. Please ensure your database connection is correct and that you have tables in the 'public' schema."
+                print(f"[SAGA STEP 2] 🛑 {error_msg}")
+                
+                # Update call stack
+                message.add_to_call_stack(
+                    step_name="check_tables",
+                    status="failed",
+                    duration_ms=duration_ms,
+                    error=error_msg
+                )
+                
+                # Store final result as error
+                from agentic_sql.saga.state_store import get_saga_state_store
+                saga_store = get_saga_state_store()
+                
+                result_dict = {
+                    "success": False,
+                    "saga_id": message.saga_id,
+                    "question": message.question,
+                    "error_message": error_msg,
+                    "formatted_response": f"I cannot process your query because I couldn't find any tables in your database. {error_msg}",
+                    "call_stack": [entry.to_dict() for entry in message.call_stack],
+                    "status": "error"
+                }
+                saga_store.store_result(message.saga_id, result_dict, status="error")
+                
+                # Acknowledge and stop
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                return
+
+            # Relevance Guardrail
+            print(f"[SAGA STEP 2] Performing relevance check for: '{message.question}'...")
+            is_relevant, irrelevant_reason = check_question_relevance(
+                message.question, 
+                message.schema_context, 
+                message.business_context, 
+                available_tables
+            )
+            
+            if not is_relevant:
+                print(f"[SAGA STEP 2] 🛑 Question is IRRELEVANT: {irrelevant_reason}")
+                
+                # Update call stack
+                message.add_to_call_stack(
+                    step_name="relevance_check",
+                    status="failed",
+                    duration_ms=(time.time() - start_time) * 1000,
+                    reason=irrelevant_reason
+                )
+                
+                # Store final result as "Irrelevant" and stop
+                from agentic_sql.saga.state_store import get_saga_state_store
+                saga_store = get_saga_state_store()
+                
+                result_dict = {
+                    "success": False,
+                    "saga_id": message.saga_id,
+                    "question": message.question,
+                    "error_message": irrelevant_reason,
+                    "formatted_response": f"I'm sorry, I cannot answer that. {irrelevant_reason}",
+                    "call_stack": [entry.to_dict() for entry in message.call_stack],
+                    "status": "error",
+                    "is_irrelevant": True
+                }
+                # Store as 'error' so the UI displays the reason
+                saga_store.store_result(message.saga_id, result_dict, status="error")
+                
+                # Acknowledge and stop saga
+                ch.basic_ack(delivery_tag=method.delivery_tag)
+                return
+
+            # If relevant, proceed to query generation
             publisher = SagaPublisher()
             publisher.publish_query_generation(next_message)
             
