@@ -66,7 +66,12 @@ services:
     env_file:
       - .env
     environment:
+      - DATABASE_URL=postgresql://${METADATA_DB_USER:-admin}:${METADATA_DB_PASSWORD:-password}@metadata_store:5432/${METADATA_DB_NAME:-insight_engine}
+      - DATABASE_M_URL=postgresql://${METADATA_DB_USER:-admin}:${METADATA_DB_PASSWORD:-password}@metadata_store:5432/${METADATA_DB_NAME:-insight_engine}
       - REDIS_HOST=redis
+      - RABBITMQ_HOST=rabbitmq
+      - CHROMA_HOST=chromadb
+      - MINIO_HOST=minio
     depends_on:
       - metadata_store
       - chromadb

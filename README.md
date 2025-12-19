@@ -38,7 +38,6 @@ The easiest way to run the entire stack (API, Consumers, Redis, RabbitMQ, Postgr
 ```bash
 docker compose up --build
 ```
-*Note: Database migrations run automatically on startup inside the container.*
 
 ### 3. Local Development
 

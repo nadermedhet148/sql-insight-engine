@@ -25,7 +25,7 @@ import account.models  # Register models
 target_metadata = Base.metadata
 
 # Override sqlalchemy.url from environment variable if present
-db_url = os.getenv("DATABASE_URL")
+db_url = os.getenv("DATABASE_M_URL")
 if db_url:
     config.set_main_option("sqlalchemy.url", db_url)
 
