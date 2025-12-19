@@ -72,11 +72,15 @@ class QueryInitiatedMessage(SagaBaseMessage):
 class KnowledgeBaseCheckedMessage(SagaBaseMessage):
     schema_context: List[str] = field(default_factory=list)
     schema_documents_count: int = 0
+    business_context: List[str] = field(default_factory=list)
+    business_documents_count: int = 0
     
     def to_dict(self) -> dict:
         data = super().to_dict()
         data["schema_context"] = self.schema_context
         data["schema_documents_count"] = self.schema_documents_count
+        data["business_context"] = self.business_context
+        data["business_documents_count"] = self.business_documents_count
         return data
 
 
@@ -85,12 +89,16 @@ class TablesCheckedMessage(SagaBaseMessage):
     schema_context: List[str] = field(default_factory=list)
     available_tables: List[str] = field(default_factory=list)
     table_schemas: Dict[str, Any] = field(default_factory=dict)
+    business_context: List[str] = field(default_factory=list)
+    business_documents_count: int = 0
     
     def to_dict(self) -> dict:
         data = super().to_dict()
         data["schema_context"] = self.schema_context
         data["available_tables"] = self.available_tables
         data["table_schemas"] = self.table_schemas
+        data["business_context"] = self.business_context
+        data["business_documents_count"] = self.business_documents_count
         return data
 
 
@@ -99,12 +107,16 @@ class QueryGeneratedMessage(SagaBaseMessage):
     schema_context: List[str] = field(default_factory=list)
     generated_sql: str = ""
     db_config: dict = field(default_factory=dict)
+    business_context: List[str] = field(default_factory=list)
+    business_documents_count: int = 0
     
     def to_dict(self) -> dict:
         data = super().to_dict()
         data["schema_context"] = self.schema_context
         data["generated_sql"] = self.generated_sql
         data["db_config"] = self.db_config
+        data["business_context"] = self.business_context
+        data["business_documents_count"] = self.business_documents_count
         return data
 
 

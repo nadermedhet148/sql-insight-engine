@@ -96,6 +96,8 @@ class PostgresMCPServer:
             if name == "list_tables":
                 schema = arguments.get("schema", None)
                 tables = inspector.get_table_names(schema=schema)
+                import sys
+                sys.stderr.write(f"\n[DEBUG MCP] Found raw tables in schema '{schema}': {tables}\n")
                 return [TextContent(
                     type="text",
                     text=f"Tables in database:\n" + "\n".join(f"- {t}" for t in tables)

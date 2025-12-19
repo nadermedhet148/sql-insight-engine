@@ -26,35 +26,47 @@ def retrieve_schema_context(account_id: str, question: str, collection_name: str
     """Retrieve schema information from ChromaDB"""
     try:
         chroma_client = get_chroma_client()
+        collection = chroma_client.get_or_create_collection(name=collection_name)
         
-        # Get or create collection
-        collection = chroma_client.get_or_create_collection(
-            name=collection_name,
-            metadata={"hnsw:space": "cosine"}
-        )
-        
-        # Generate embedding for the question
         query_embedding = gemini_client.get_embedding(question, task_type="retrieval_query")
-        
-        # Query ChromaDB for relevant schema information
         results = collection.query(
             query_embeddings=[query_embedding],
             n_results=5,
             where={"account_id": account_id}
         )
         
-        # Extract documents
         if results and results.get('documents') and len(results['documents']) > 0:
-            context_docs = results['documents'][0]
-            print(f"[SAGA STEP 1] Retrieved {len(context_docs)} schema documents")
-            return context_docs
-        else:
-            print("[SAGA STEP 1] No schema context found")
-            return []
-            
+            return results['documents'][0]
+        return []
     except Exception as e:
         print(f"[SAGA STEP 1] Error retrieving schema context: {e}")
         return []
+
+def retrieve_business_context(account_id: str, question: str, collection_name: str = "knowledgebase") -> tuple[List[str], str]:
+    """Retrieve business rules/knowledge from ChromaDB"""
+    kw_prompt = f"Extract 2-3 key business entities or concepts from this question for semantic search: '{question}'. Return only the keywords separated by spaces."
+    try:
+        # Strategy: Extract business keywords from question first
+        kw_response = gemini_client.generate_content(kw_prompt)
+        keywords = kw_response.text.strip() if kw_response else ""
+        search_query = f"{question} {keywords}"
+        
+        chroma_client = get_chroma_client()
+        collection = chroma_client.get_or_create_collection(name=collection_name)
+        
+        query_embedding = gemini_client.get_embedding(search_query, task_type="retrieval_query")
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=3,
+            where={"account_id": account_id}
+        )
+        
+        if results and results.get('documents') and len(results['documents']) > 0:
+            return results['documents'][0], kw_prompt
+        return [], kw_prompt
+    except Exception as e:
+        print(f"[SAGA STEP 1] Error retrieving business context: {e}")
+        return [], kw_prompt
 
 def process_knowledge_base_check(ch, method, properties, body):
     """Process knowledge base check step"""
@@ -70,6 +82,7 @@ def process_knowledge_base_check(ch, method, properties, body):
         
         # Logic moved from QueryService
         schema_context = retrieve_schema_context(message.account_id, message.question)
+        business_context, kw_prompt = retrieve_business_context(message.account_id, message.question)
         
         duration_ms = (time.time() - start_time) * 1000
         
@@ -80,7 +93,9 @@ def process_knowledge_base_check(ch, method, properties, body):
             account_id=message.account_id,
             question=message.question,
             schema_context=schema_context,
-            schema_documents_count=len(schema_context)
+            schema_documents_count=len(schema_context),
+            business_context=business_context,
+            business_documents_count=len(business_context)
         )
         
         # Copy call stack
@@ -91,8 +106,10 @@ def process_knowledge_base_check(ch, method, properties, body):
             step_name="check_knowledge_base",
             status="success",
             duration_ms=duration_ms,
-            documents_retrieved=len(schema_context),
-            has_context=len(schema_context) > 0
+            documents_retrieved=len(schema_context) + len(business_context),
+            has_schema=len(schema_context) > 0,
+            has_business=len(business_context) > 0,
+            prompt=kw_prompt
         )
         
         print(f"[SAGA STEP 1] ✓ Step completed in {duration_ms:.2f}ms")

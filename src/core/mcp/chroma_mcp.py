@@ -52,43 +52,72 @@ class ChromaMCPServer:
                         },
                         "required": ["query", "account_id"]
                     }
+                ),
+                Tool(
+                    name="search_business_knowledge",
+                    description="Search for business rules, definitions, or organizational knowledge relevant to the query. Use this if the user uses business terms that aren't clear from the table names alone.",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The business-related query (e.g., 'What is an active customer?')"
+                            },
+                            "account_id": {
+                                "type": "string",
+                                "description": "The account ID to scope the search to"
+                            },
+                            "n_results": {
+                                "type": "integer",
+                                "description": "Number of results to return (default: 3)",
+                                "default": 3
+                            }
+                        },
+                        "required": ["query", "account_id"]
+                    }
                 )
             ]
 
         @self.server.call_tool()
         async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if name == "search_relevant_schema":
-                query = arguments["query"]
-                account_id = str(arguments["account_id"])
-                n_results = arguments.get("n_results", 5)
-                
-                try:
-                    collection = self._get_collection(account_id)
-                    
-                    # Generate embedding
-                    query_embedding = self.gemini_client.get_embedding(query, task_type="retrieval_query")
-                    
-                    # Query Chroma
-                    results = collection.query(
-                        query_embeddings=[query_embedding],
-                        n_results=n_results,
-                        where={"account_id": account_id}
-                    )
-                    
-                    if not results or not results.get('documents') or not results['documents'][0]:
-                        return [TextContent(type="text", text="No relevant schema information found for this query.")]
-                    
-                    context_docs = results['documents'][0]
-                    formatted_results = "# Relevant Schema Information\n\n"
-                    for idx, doc in enumerate(context_docs):
-                        formatted_results += f"### Result {idx+1}:\n{doc}\n\n"
-                        
-                    return [TextContent(type="text", text=formatted_results)]
-                    
-                except Exception as e:
-                    return [TextContent(type="text", text=f"Error searching schema: {str(e)}")]
+                return await self._handle_search(arguments, "account_schema_info", "# Relevant Schema Information")
+            elif name == "search_business_knowledge":
+                return await self._handle_search(arguments, "knowledgebase", "# Business Knowledge Context")
             
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
+
+    async def _handle_search(self, arguments: dict, collection_name: str, title: str) -> list[TextContent]:
+        query = arguments["query"]
+        account_id = str(arguments["account_id"])
+        n_results = arguments.get("n_results", 5 if collection_name == "account_schema_info" else 3)
+        
+        try:
+            chroma_client = ChromaClientFactory.get_client()
+            collection = chroma_client.get_or_create_collection(name=collection_name)
+            
+            # Generate embedding
+            query_embedding = self.gemini_client.get_embedding(query, task_type="retrieval_query")
+            
+            # Query Chroma
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=n_results,
+                where={"account_id": account_id}
+            )
+            
+            if not results or not results.get('documents') or not results['documents'][0]:
+                return [TextContent(type="text", text=f"No relevant items found in {collection_name} for this query.")]
+            
+            context_docs = results['documents'][0]
+            formatted_results = f"{title}\n\n"
+            for idx, doc in enumerate(context_docs):
+                formatted_results += f"### Result {idx+1}:\n{doc}\n\n"
+                
+            return [TextContent(type="text", text=formatted_results)]
+            
+        except Exception as e:
+            return [TextContent(type="text", text=f"Error searching {collection_name}: {str(e)}")]
 
     async def run(self):
         """Run the MCP server via stdio"""

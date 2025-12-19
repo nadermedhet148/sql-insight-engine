@@ -54,6 +54,7 @@ class DatabaseService:
             client = create_mcp_client_from_config(db_config)
             result = self._run_async(client.call_tool("list_tables", {"schema": schema}))
             
+            print(f"\n{'='*50}\n[DEBUG] RAW MCP RESPONSE FOR list_tables:\n{result.content}\n{'='*50}\n")
             if result.success and "Tables in database:" in result.content:
                 # Basic parsing of the markdown-like output
                 lines = result.content.split('\n')[1:]

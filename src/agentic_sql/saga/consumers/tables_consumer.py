@@ -60,7 +60,9 @@ def process_tables_check(ch, method, properties, body):
                 question=message.question,
                 schema_context=message.schema_context,
                 available_tables=available_tables,
-                table_schemas=table_schemas
+                table_schemas=table_schemas,
+                business_context=getattr(message, "business_context", []),
+                business_documents_count=getattr(message, "business_documents_count", 0)
             )
             
             # Copy call stack
