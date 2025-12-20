@@ -11,17 +11,62 @@
 
 Most "Text-to-SQL" tools fail because they don't understand business context. If you ask for "churned users," a standard LLM guesses the logic.
 
-**SQL Insight Engine** solves this by injecting a **Knowledge Base** layer before querying the database. It:
-1.  **Retrieves** exact business definitions (e.g., "Churn = Inactive > 30 days") from a Vector Database (ChromaDB).
-2.  **Generates** PostgreSQL queries based on those specific rules.
-3.  **Self-Corrects** if the database returns a syntax error.
-4.  **Reports** findings in executive summary format.
+**SQL Insight Engine** solves this by using an **Agentic SQL Analyst** workflow. Unlike static tools, it:
+1.  **Discovers Context**: Proactively searches the **Knowledge Base** (ChromaDB) for business logic (e.g., "Churn = Inactive > 30 days") using MCP search tools only when needed.
+2.  **Schema Validation**: Verifies available tables in real-time before attempting to generate queries.
+3.  **Agentic Generation**: Uses a tool-calling loop to describe tables and confirm business rules before writing PostgreSQL.
+4.  **Self-Correction**: Automatically detects hallucinations and syntax errors, attempting to fix them in-flight.
+5.  **Executive Reporting**: Synthesizes results into a human-readable summary.
 
 ## 🏗️ Architecture
 
-The system uses a "Retrieval-Augmented Generation" (RAG) flow combined with a self-correcting execution loop powered by a Saga pattern with RabbitMQ.
+The system uses a **Saga Pattern** with RabbitMQ to manage long-running agentic loops. It combines a state-managed asynchronous execution flow with **MCP (Model Context Protocol)** tools that allow the LLM to dynamically interact with both the database and the knowledge base.
 
-<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/cb0c98e9-e83f-4882-b5e6-9c992f219c74" />
+### System Flow
+```mermaid
+graph TD
+    User([User Question]) --> API[FastAPI Entrypoint]
+    API --> Store[State Store: Pending]
+    API --> RMQ[(RabbitMQ: Exchange)]
+    
+    subgraph Saga Workers
+        RMQ --> T[Tables Check Worker]
+        T --> G[Query Generator Worker]
+        G --> E[Query Executor Worker]
+        E --> F[Result Formatter Worker]
+    end
+    
+    subgraph Agentic Intelligence
+        G <--> Gemini{Agentic SQL Analyst}
+        Gemini <--> MCP_DB[Database MCP Tool]
+        Gemini <--> MCP_KB[Knowledge Base MCP Tool]
+    end
+    
+    F --> Store_Complete[State Store: Completed]
+    Store_Complete --> User_Res([Final Formatted Insight])
+```
+
+### Saga Pattern Workflow
+```mermaid
+sequenceDiagram
+    participant API as FastAPI
+    participant RMQ as RabbitMQ
+    participant T as Step 1: Tables Check
+    participant G as Step 2: Query Generator
+    participant E as Step 3: Query Executor
+    participant F as Step 4: Result Formatter
+    
+    API->>RMQ: Publish Initial Message
+    RMQ->>T: Consume Base Message
+    T->>RMQ: Publish TablesCheckedMessage
+    RMQ->>G: Consume TablesCheckedMessage
+    G->>G: Agentic Loop (Tool Calls)
+    G->>RMQ: Publish QueryGeneratedMessage
+    RMQ->>E: Consume QueryGeneratedMessage
+    E->>RMQ: Publish QueryExecutedMessage
+    RMQ->>F: Consume QueryExecutedMessage
+    F->>F: Final Output Formatting
+```
 
 ---
 
