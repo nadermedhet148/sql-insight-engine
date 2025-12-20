@@ -46,8 +46,8 @@ class ChromaMCPServer:
                             },
                             "n_results": {
                                 "type": "integer",
-                                "description": "Number of results to return (default: 5)",
-                                "default": 5
+                                "description": "Number of results to return (default: 2)",
+                                "default": 2
                             }
                         },
                         "required": ["query", "account_id"]
@@ -69,8 +69,8 @@ class ChromaMCPServer:
                             },
                             "n_results": {
                                 "type": "integer",
-                                "description": "Number of results to return (default: 3)",
-                                "default": 3
+                                "description": "Number of results to return (default: 1)",
+                                "default": 1
                             }
                         },
                         "required": ["query", "account_id"]
@@ -90,7 +90,7 @@ class ChromaMCPServer:
     async def _handle_search(self, arguments: dict, collection_name: str, title: str) -> list[TextContent]:
         query = arguments["query"]
         account_id = str(arguments["account_id"])
-        n_results = arguments.get("n_results", 5 if collection_name == "account_schema_info" else 3)
+        n_results = arguments.get("n_results", 2 if collection_name == "account_schema_info" else 1)
         
         try:
             chroma_client = ChromaClientFactory.get_client()

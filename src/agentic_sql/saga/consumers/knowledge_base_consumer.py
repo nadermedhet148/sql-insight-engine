@@ -31,7 +31,7 @@ def retrieve_schema_context(account_id: str, question: str, collection_name: str
         query_embedding = gemini_client.get_embedding(question, task_type="retrieval_query")
         results = collection.query(
             query_embeddings=[query_embedding],
-            n_results=5,
+            n_results=2,
             where={"account_id": account_id}
         )
         
@@ -57,7 +57,7 @@ def retrieve_business_context(account_id: str, question: str, collection_name: s
         query_embedding = gemini_client.get_embedding(search_query, task_type="retrieval_query")
         results = collection.query(
             query_embeddings=[query_embedding],
-            n_results=3,
+            n_results=1,
             where={"account_id": account_id}
         )
         
