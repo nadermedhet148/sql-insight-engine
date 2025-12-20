@@ -9,8 +9,8 @@ import json
 import time
 from typing import List, Any
 from agentic_sql.saga.messages import (
-    KnowledgeBaseCheckedMessage, TablesCheckedMessage,
-    SagaErrorMessage, message_from_dict
+    TablesCheckedMessage,
+    SagaErrorMessage, message_from_dict, QueryInitiatedMessage
 )
 from agentic_sql.saga.publisher import SagaPublisher
 from core.services.database_service import database_service
@@ -82,7 +82,7 @@ def process_tables_check(ch, method, properties, body):
     try:
         # Parse message
         data = json.loads(body)
-        message = message_from_dict(data, KnowledgeBaseCheckedMessage)
+        message = message_from_dict(data, QueryInitiatedMessage)
         
         print(f"\n[SAGA STEP 2] Tables Check - Saga ID: {message.saga_id}")
         
@@ -108,7 +108,7 @@ def process_tables_check(ch, method, properties, body):
                 user_id=message.user_id,
                 account_id=message.account_id,
                 question=message.question,
-                schema_context=message.schema_context,
+                schema_context=getattr(message, "schema_context", []),
                 available_tables=available_tables,
                 table_schemas=table_schemas,
                 business_context=getattr(message, "business_context", []),
@@ -166,8 +166,8 @@ def process_tables_check(ch, method, properties, body):
             print(f"[SAGA STEP 2] Performing relevance check for: '{message.question}'...")
             is_relevant, irrelevant_reason = check_question_relevance(
                 message.question, 
-                message.schema_context, 
-                message.business_context, 
+                getattr(message, "schema_context", []), 
+                getattr(message, "business_context", []), 
                 available_tables
             )
             
@@ -227,7 +227,7 @@ def process_tables_check(ch, method, properties, body):
         # Create error message
         try:
             data = json.loads(body)
-            message = message_from_dict(data, KnowledgeBaseCheckedMessage)
+            message = message_from_dict(data, QueryInitiatedMessage)
             
             error_message = SagaErrorMessage(
                 saga_id=message.saga_id,

@@ -99,15 +99,15 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
     2. YOU MUST call `describe_table(table_name)` for EVERY table you include in your SQL. If you don't describe it, your answer will be rejected.
     3. If the question requires data that isn't in any of the available tables, DO NOT invent tables or columns. State clearly that the data is missing.
     4. Only use the tables listed below as "AVAILABLE REAL TABLES".
+    5. If you are unsure about how to answer (e.g., which tables to use or what certain business terms mean), YOU MUST use the search tools `search_relevant_schema` and `search_business_knowledge`.
     
     AVAILABLE REAL TABLES: {", ".join(message.available_tables) if message.available_tables else "NONE"}
     
     STRATEGY:
-    1. Identify which tables from the available list are likely relevant (using the SCHEMA CONTEXT fragments as a guide).
-    2. Use search_relevant_schema and search_business_knowledge to confirm business rules and deeper schema.
-    3. CALL describe_table for each relevant table to get the exact final column names.
-    4. If the question not realted to the avabile tables , you can say the question out of you bussiness scope.
-    5. Write the final SQL query.
+    1. Use `search_relevant_schema` and `search_business_knowledge` to identify relevant tables and understand business rules (especially if SCHEMA CONTEXT is empty).
+    2. CALL describe_table for each relevant table to get the exact final column names.
+    3. If the question is not related to the available tables or business scope even after searching, state that it is "out of your business scope".
+    4. Write the final SQL query.
     
     Once you have enough information, reply with:
     REASONING: [Your explanation]

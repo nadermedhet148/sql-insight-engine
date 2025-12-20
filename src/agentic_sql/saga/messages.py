@@ -85,22 +85,6 @@ class QueryInitiatedMessage(SagaBaseMessage):
 
 
 @dataclass
-class KnowledgeBaseCheckedMessage(SagaBaseMessage):
-    schema_context: List[str] = field(default_factory=list)
-    schema_documents_count: int = 0
-    business_context: List[str] = field(default_factory=list)
-    business_documents_count: int = 0
-    
-    def to_dict(self) -> dict:
-        data = super().to_dict()
-        data["schema_context"] = self.schema_context
-        data["schema_documents_count"] = self.schema_documents_count
-        data["business_context"] = self.business_context
-        data["business_documents_count"] = self.business_documents_count
-        return data
-
-
-@dataclass
 class TablesCheckedMessage(SagaBaseMessage):
     schema_context: List[str] = field(default_factory=list)
     available_tables: List[str] = field(default_factory=list)

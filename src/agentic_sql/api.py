@@ -97,10 +97,10 @@ def query_user_database_async(
         "account_id": user.account_id
     })
     
-    # Publish to first step (knowledge base check)
+    # Publish to first step (tables check)
     try:
         publisher = get_saga_publisher()
-        publisher.publish_knowledge_base_check(message)
+        publisher.publish_tables_check(message)
         
         print(f"[API] ✓ Published to saga queue")
         print(f"[API] Saga started successfully")

@@ -15,7 +15,6 @@ class SagaPublisher:
     """Publisher for saga messages"""
     
     # Queue names for each saga step
-    QUEUE_KNOWLEDGE_BASE = "query_check_knowledgebase"
     QUEUE_CHECK_TABLES = "query_check_tables"
     QUEUE_GENERATE_QUERY = "query_generate_query"
     QUEUE_EXECUTE_QUERY = "query_execute_query"
@@ -48,7 +47,6 @@ class SagaPublisher:
     def _declare_queues(self):
         """Declare all saga queues"""
         queues = [
-            self.QUEUE_KNOWLEDGE_BASE,
             self.QUEUE_CHECK_TABLES,
             self.QUEUE_GENERATE_QUERY,
             self.QUEUE_EXECUTE_QUERY,
@@ -83,9 +81,6 @@ class SagaPublisher:
         
         print(f"[SAGA PUBLISHER] Published to '{queue}' - Saga ID: {message.saga_id}")
     
-    def publish_knowledge_base_check(self, message: SagaBaseMessage):
-        """Publish to knowledge base check queue (Step 1)"""
-        self.publish(self.QUEUE_KNOWLEDGE_BASE, message)
     
     def publish_tables_check(self, message: SagaBaseMessage):
         """Publish to tables check queue (Step 2)"""
