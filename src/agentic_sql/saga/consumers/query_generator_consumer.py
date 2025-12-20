@@ -59,22 +59,22 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
         res = run_async(chroma_client.call_tool("search_relevant_schema", {
             "query": query, 
             "account_id": message.account_id
-        }))
+        }, message=message))
         return res.content if res.success else f"Error: {res.error}"
 
     def search_business_knowledge(query: str) -> str:
         res = run_async(chroma_client.call_tool("search_business_knowledge", {
             "query": query, 
             "account_id": message.account_id
-        }))
+        }, message=message))
         return res.content if res.success else f"Error: {res.error}"
 
     def describe_table(table_name: str) -> str:
-        res = run_async(db_client.call_tool("describe_table", {"table_name": table_name}))
+        res = run_async(db_client.call_tool("describe_table", {"table_name": table_name}, message=message))
         return res.content if res.success else f"Error: {res.error}"
 
     def list_tables() -> str:
-        res = run_async(db_client.call_tool("list_tables", {}))
+        res = run_async(db_client.call_tool("list_tables", {}, message=message))
         return res.content if res.success else f"Error: {res.error}"
 
     # Setup Gemini with tools
@@ -166,16 +166,6 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
     sql = sql.replace("```sql", "").replace("```", "").strip()
     if sql.endswith(";"): sql = sql[:-1]
     
-    # Capture tool calls for the call stack
-    tool_history = []
-    if response.candidates and response.candidates[0].content.parts:
-        for part in response.candidates[0].content.parts:
-            if part.function_call:
-                tool_history.append({
-                    "tool": part.function_call.name,
-                    "args": dict(part.function_call.args)
-                })
-
     # Capture usage metadata if available
     usage = {}
     if hasattr(response, "usage_metadata"):
@@ -185,7 +175,7 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
             "total_token_count": response.usage_metadata.total_token_count
         }
             
-    return sql, reasoning, tool_history, prompt, usage, interaction_history
+    return sql, reasoning, prompt, usage, interaction_history
 
 def run_async(coro):
     """Helper to run async coroutines in a synchronous context"""
@@ -227,7 +217,7 @@ def process_query_generation(ch, method, properties, body):
             db.close()
 
         # Run the synchronous agentic loop
-        generated_sql, llm_reasoning, tool_history, llm_prompt, llm_usage, interaction_history = run_agentic_sql_generation(message, db_config_dict)
+        generated_sql, llm_reasoning, llm_prompt, llm_usage, interaction_history = run_agentic_sql_generation(message, db_config_dict)
         
         # SQL Table Validation
         used_tables = extract_tables_from_sql(generated_sql)
@@ -262,13 +252,16 @@ def process_query_generation(ch, method, properties, body):
             business_documents_count=getattr(message, "business_documents_count", 0)
         )
         
+        # Copy call stack and pending tool calls
         next_message.call_stack = message.call_stack.copy()
+        next_message._current_tool_calls = message._current_tool_calls.copy()
+        message._current_tool_calls = []
+        
         # Add this step to call stack
         next_message.add_to_call_stack(
             step_name="generate_query_agentic",
             status="success",
             duration_ms=duration_ms,
-            tools_used=sanitize_for_json(tool_history),
             llm_reasoning=llm_reasoning,
             prompt=llm_prompt,
             usage=llm_usage,
@@ -277,7 +270,7 @@ def process_query_generation(ch, method, properties, body):
         
         print(f"[SAGA STEP 3] Reasoning: {llm_reasoning[:200]}...")
         print(f"[SAGA STEP 3] Token Usage: {llm_usage}")
-        print(f"[SAGA STEP 3] ✓ SQL generated in {duration_ms:.2f}ms using {len(tool_history)} tools")
+        print(f"[SAGA STEP 3] ✓ SQL generated in {duration_ms:.2f}ms")
         
         publisher = SagaPublisher()
         publisher.publish_query_execution(next_message)

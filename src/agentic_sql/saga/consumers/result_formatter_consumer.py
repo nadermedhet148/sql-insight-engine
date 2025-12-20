@@ -164,6 +164,7 @@ def process_result_formatting(ch, method, properties, body):
             )
             
             error_message.call_stack = message.call_stack.copy()
+            error_message._current_tool_calls = message._current_tool_calls.copy()
             error_message.add_to_call_stack(
                 step_name="format_result",
                 status="error",

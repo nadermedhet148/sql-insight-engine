@@ -530,9 +530,16 @@ function renderCallStack(callStack) {
                         </div>
                         <div class="tool-list">
                             ${m.tools_used.map(t => `
-                                <div class="tool-item">
-                                    <div class="tool-name">${t.tool}</div>
+                                <div class="tool-item ${t.status === 'error' ? 'tool-error' : ''}">
+                                    <div class="tool-header">
+                                        <div class="tool-name">${t.tool}</div>
+                                        ${t.duration_ms ? `<div class="tool-duration">${t.duration_ms.toFixed(0)}ms</div>` : ''}
+                                    </div>
                                     <div class="tool-args">${JSON.stringify(t.args)}</div>
+                                    ${t.response ? `
+                                        <div class="tool-response">
+                                            <strong>Response:</strong> ${typeof t.response === 'string' ? t.response : JSON.stringify(t.response)}
+                                        </div>` : ''}
                                 </div>
                             `).join('')}
                         </div>

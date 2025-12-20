@@ -36,9 +36,25 @@ class SagaBaseMessage:
     account_id: str
     question: str
     call_stack: List[CallStackEntry] = field(default_factory=list)
-    
+    _current_tool_calls: List[Dict[str, Any]] = field(default_factory=list)
+
+    def track_tool_call(self, tool: str, args: Dict[str, Any], response: Any, duration_ms: float = 0, status: str = "success"):
+        """Track an MCP tool call to be included in the next call stack entry"""
+        self._current_tool_calls.append({
+            "tool": tool,
+            "args": args,
+            "response": response,
+            "duration_ms": duration_ms,
+            "status": status
+        })
+
     def add_to_call_stack(self, step_name: str, status: str = "success", 
                           duration_ms: Optional[float] = None, **metadata):
+        # Auto-include any tracked tool calls if not explicitly provided
+        if self._current_tool_calls and "tools_used" not in metadata:
+            metadata["tools_used"] = self._current_tool_calls.copy()
+            self._current_tool_calls = []
+
         entry = CallStackEntry(
             step_name=step_name,
             timestamp=datetime.utcnow().isoformat(),

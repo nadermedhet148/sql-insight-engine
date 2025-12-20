@@ -39,7 +39,7 @@ def process_query_execution(ch, method, properties, body):
         
         # Logic calling database_service (no QueryService needed)
         print(f"[SAGA STEP 4] Executing SQL on user database...")
-        execution_result = database_service.execute_query(db_config, message.generated_sql)
+        execution_result = database_service.execute_query(db_config, message.generated_sql, message=message)
         
         duration_ms = (time.time() - start_time) * 1000
         
@@ -60,6 +60,7 @@ def process_query_execution(ch, method, properties, body):
             )
             
             error_message.call_stack = message.call_stack.copy()
+            error_message._current_tool_calls = message._current_tool_calls.copy()
             error_message.add_to_call_stack(
                 step_name="execute_query",
                 status="error",
@@ -91,8 +92,10 @@ def process_query_execution(ch, method, properties, body):
             execution_error=None
         )
         
-        # Copy call stack
+        # Copy call stack and pending tool calls
         next_message.call_stack = message.call_stack.copy()
+        next_message._current_tool_calls = message._current_tool_calls.copy()
+        message._current_tool_calls = []
         
         # Add this step to call stack
         next_message.add_to_call_stack(

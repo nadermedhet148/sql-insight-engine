@@ -26,7 +26,9 @@ class GenericMCPClient:
             env={**os.environ, **(env or {}), "PYTHONPATH": f"{os.getcwd()}/src:{os.getcwd()}"}
         )
     
-    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> MCPToolResult:
+    async def call_tool(self, tool_name: str, arguments: Dict[str, Any], message: Any = None) -> MCPToolResult:
+        import time
+        start_time = time.time()
         try:
             async with stdio_client(self.server_params) as (read, write):
                 async with ClientSession(read, write) as session:
@@ -40,11 +42,33 @@ class GenericMCPClient:
                         if hasattr(content, "text"):
                             content_text += content.text
                             
-                    return MCPToolResult(
+                    duration_ms = (time.time() - start_time) * 1000
+                    
+                    mcp_result = MCPToolResult(
                         success=not result.isError if hasattr(result, "isError") else True,
                         content=content_text
                     )
+
+                    if message and hasattr(message, "track_tool_call"):
+                        message.track_tool_call(
+                            tool=tool_name,
+                            args=filtered_args,
+                            response=content_text,
+                            duration_ms=duration_ms,
+                            status="success" if mcp_result.success else "error"
+                        )
+
+                    return mcp_result
         except Exception as e:
+            duration_ms = (time.time() - start_time) * 1000
+            if message and hasattr(message, "track_tool_call"):
+                message.track_tool_call(
+                    tool=tool_name,
+                    args=arguments,
+                    response=str(e),
+                    duration_ms=duration_ms,
+                    status="error"
+                )
             return MCPToolResult(success=False, content="", error=str(e))
 
 

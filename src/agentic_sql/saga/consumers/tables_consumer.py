@@ -7,7 +7,7 @@ Retrieves actual table information from user's database.
 import pika
 import json
 import time
-from typing import List
+from typing import List, Any
 from agentic_sql.saga.messages import (
     KnowledgeBaseCheckedMessage, TablesCheckedMessage,
     SagaErrorMessage, message_from_dict
@@ -19,15 +19,15 @@ from account.models import User
 from core.database.session import get_db
 
 # Initialize Gemini for relevance check
-gemini_client = GeminiClient(model_name="models/gemini-1.5-flash")
+gemini_client = GeminiClient(model_name="models/gemini-2.0-flash")
 
 
-def get_table_names_logic(db_config) -> List[str]:
+def get_table_names_logic(db_config, message: Any = None) -> List[str]:
     """Logic to retrieve table names from user database"""
     print(f"[SAGA STEP 2] Checking available tables in user database...")
     # database_service.get_table_names returns List[str]
     try:
-        available_tables = database_service.get_table_names(db_config)
+        available_tables = database_service.get_table_names(db_config, message=message)
         return available_tables if isinstance(available_tables, list) else []
     except Exception as e:
         print(f"[SAGA STEP 2] Error in get_table_names_logic: {e}")
@@ -96,7 +96,7 @@ def process_tables_check(ch, method, properties, body):
             db_config = user.db_config
             
             # Logic moved from QueryService
-            available_tables = get_table_names_logic(db_config)
+            available_tables = get_table_names_logic(db_config, message=message)
             print(f"[SAGA STEP 2] Debug available_tables: {available_tables}")
             table_schemas = {name: {"name": name} for name in available_tables}
             
@@ -115,8 +115,10 @@ def process_tables_check(ch, method, properties, body):
                 business_documents_count=getattr(message, "business_documents_count", 0)
             )
             
-            # Copy call stack
+            # Copy call stack and pending tool calls
             next_message.call_stack = message.call_stack.copy()
+            next_message._current_tool_calls = message._current_tool_calls.copy()
+            message._current_tool_calls = [] # Clear from original
             
             # Add this step to call stack
             next_message.add_to_call_stack(
@@ -238,6 +240,7 @@ def process_tables_check(ch, method, properties, body):
             )
             
             error_message.call_stack = message.call_stack.copy()
+            error_message._current_tool_calls = message._current_tool_calls.copy()
             error_message.add_to_call_stack(
                 step_name="check_tables",
                 status="error",

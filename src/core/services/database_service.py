@@ -31,13 +31,13 @@ class DatabaseService:
             
         return loop.run_until_complete(coro)
 
-    def execute_query(self, db_config, query: str) -> DatabaseOperationResult:
+    def execute_query(self, db_config, query: str, message: Any = None) -> DatabaseOperationResult:
         """Execute a SQL SELECT query via MCP tool"""
         from core.mcp.client import create_mcp_client_from_config
         
         try:
             client = create_mcp_client_from_config(db_config)
-            result = self._run_async(client.call_tool("run_query", {"query": query}))
+            result = self._run_async(client.call_tool("run_query", {"query": query}, message=message))
             return DatabaseOperationResult(
                 success=result.success,
                 data=result.content,
@@ -46,7 +46,7 @@ class DatabaseService:
         except Exception as e:
             return DatabaseOperationResult(success=False, data="", error=str(e))
 
-    def get_table_names(self, db_config, schema: Optional[str] = None) -> List[str]:
+    def get_table_names(self, db_config, schema: Optional[str] = None, message: Any = None) -> List[str]:
         """Get list of table names via MCP tool"""
         from core.mcp.client import create_mcp_client_from_config
         
@@ -56,7 +56,7 @@ class DatabaseService:
             if schema:
                 args["schema"] = schema
                 
-            result = self._run_async(client.call_tool("list_tables", args))
+            result = self._run_async(client.call_tool("list_tables", args, message=message))
             
             print(f"\n{'='*50}\n[DEBUG] RAW MCP RESPONSE FOR list_tables:\n{result.content}\n{'='*50}\n")
             if result.success and "Tables in database:" in result.content:

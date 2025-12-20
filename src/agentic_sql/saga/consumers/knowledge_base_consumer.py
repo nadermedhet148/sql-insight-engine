@@ -7,7 +7,7 @@ Retrieves relevant schema context from ChromaDB knowledge base.
 import pika
 import json
 import time
-from typing import List
+from typing import List, Any
 from agentic_sql.saga.messages import (
     QueryInitiatedMessage, KnowledgeBaseCheckedMessage,
     SagaErrorMessage, message_from_dict
@@ -19,54 +19,43 @@ from core.infra.chroma_factory import ChromaClientFactory
 # Initialize clients
 gemini_client = GeminiClient()
 
-def get_chroma_client():
-    return ChromaClientFactory.get_client()
-
-def retrieve_schema_context(account_id: str, question: str, collection_name: str = "account_schema_info") -> List[str]:
-    """Retrieve schema information from ChromaDB"""
+def run_async(coro):
+    """Helper to run async coroutines in a synchronous context"""
+    import asyncio
+    import nest_asyncio
+    nest_asyncio.apply()
     try:
-        chroma_client = get_chroma_client()
-        collection = chroma_client.get_or_create_collection(name=collection_name)
-        
-        query_embedding = gemini_client.get_embedding(question, task_type="retrieval_query")
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=2,
-            where={"account_id": account_id}
-        )
-        
-        if results and results.get('documents') and len(results['documents']) > 0:
-            return results['documents'][0]
-        return []
-    except Exception as e:
-        print(f"[SAGA STEP 1] Error retrieving schema context: {e}")
-        return []
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
 
-def retrieve_business_context(account_id: str, question: str, collection_name: str = "knowledgebase") -> tuple[List[str], str]:
-    """Retrieve business rules/knowledge from ChromaDB"""
+def retrieve_knowledge_context(account_id: str, question: str, message: Any = None):
+    """Retrieve both schema and business context using MCP tools"""
+    from core.mcp.client import ChromaMCPClient
+    
+    chroma_mcp = ChromaMCPClient()
+    
+    # 1. Retrieve Schema Context
+    schema_args = {"query": question, "account_id": account_id, "n_results": 2}
+    res_schema = run_async(chroma_mcp.call_tool("search_relevant_schema", schema_args, message=message))
+    
+    schema_context = [res_schema.content] if res_schema.success else []
+    
+    # 2. Retrieve Business Context
+    # First extract keywords for better search
     kw_prompt = f"Extract 2-3 key business entities or concepts from this question for semantic search: '{question}'. Return only the keywords separated by spaces."
-    try:
-        # Strategy: Extract business keywords from question first
-        kw_response = gemini_client.generate_content(kw_prompt)
-        keywords = kw_response.text.strip() if kw_response else ""
-        search_query = f"{question} {keywords}"
-        
-        chroma_client = get_chroma_client()
-        collection = chroma_client.get_or_create_collection(name=collection_name)
-        
-        query_embedding = gemini_client.get_embedding(search_query, task_type="retrieval_query")
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=1,
-            where={"account_id": account_id}
-        )
-        
-        if results and results.get('documents') and len(results['documents']) > 0:
-            return results['documents'][0], kw_prompt
-        return [], kw_prompt
-    except Exception as e:
-        print(f"[SAGA STEP 1] Error retrieving business context: {e}")
-        return [], kw_prompt
+    kw_response = gemini_client.generate_content(kw_prompt)
+    keywords = kw_response.text.strip() if kw_response else ""
+    search_query = f"{question} {keywords}"
+    
+    biz_args = {"query": search_query, "account_id": account_id, "n_results": 1}
+    res_biz = run_async(chroma_mcp.call_tool("search_business_knowledge", biz_args, message=message))
+    
+    business_context = [res_biz.content] if res_biz.success else []
+    
+    return schema_context, business_context, kw_prompt
 
 def process_knowledge_base_check(ch, method, properties, body):
     """Process knowledge base check step"""
@@ -81,8 +70,7 @@ def process_knowledge_base_check(ch, method, properties, body):
         print(f"[SAGA STEP 1] Question: '{message.question}'")
         
         # Logic moved from QueryService
-        schema_context = retrieve_schema_context(message.account_id, message.question)
-        business_context, kw_prompt = retrieve_business_context(message.account_id, message.question)
+        schema_context, business_context, kw_prompt = retrieve_knowledge_context(message.account_id, message.question, message=message)
         
         duration_ms = (time.time() - start_time) * 1000
         
@@ -98,10 +86,12 @@ def process_knowledge_base_check(ch, method, properties, body):
             business_documents_count=len(business_context)
         )
         
-        # Copy call stack
+        # Copy call stack and pending tool calls
         next_message.call_stack = message.call_stack.copy()
+        next_message._current_tool_calls = message._current_tool_calls.copy()
+        message._current_tool_calls = []
         
-        # Add this step to call stack
+        # Add this step to call stack - will automatically pick up mcp tools from _current_tool_calls
         next_message.add_to_call_stack(
             step_name="check_knowledge_base",
             status="success",
@@ -148,6 +138,7 @@ def process_knowledge_base_check(ch, method, properties, body):
             )
             
             error_message.call_stack = message.call_stack.copy()
+            error_message._current_tool_calls = message._current_tool_calls.copy()
             error_message.add_to_call_stack(
                 step_name="check_knowledge_base",
                 status="error",
