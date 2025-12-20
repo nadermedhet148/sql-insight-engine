@@ -81,13 +81,18 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
     tools = [search_relevant_schema, search_business_knowledge, describe_table, list_tables]
     agent = GeminiClient(tools=tools)
     
-    # Format business context if available
+    # Format contexts if available
     business_context_str = ""
     if hasattr(message, 'business_context') and message.business_context:
         business_context_str = "\nBUSINESS CONTEXT:\n" + "\n".join([f"- {doc}" for doc in message.business_context])
+        
+    schema_context_str = ""
+    if hasattr(message, 'schema_context') and message.schema_context:
+        schema_context_str = "\nSCHEMA CONTEXT (POTENTIALLY RELEVANT FRAGMENTS):\n" + "\n".join([f"- {doc}" for doc in message.schema_context])
 
     prompt = f"""You are an Agentic SQL Analyst. Your goal is to write a PostgreSQL query for: "{message.question}"
     {business_context_str}
+    {schema_context_str}
     
     CRITICAL RULES:
     1. NEVER ASSUME table or column names. 
@@ -98,9 +103,9 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
     AVAILABLE REAL TABLES: {", ".join(message.available_tables) if message.available_tables else "NONE"}
     
     STRATEGY:
-    1. Identify which tables from the available list are likely relevant.
-    2. Use search_relevant_schema and search_business_knowledge to confirm business rules.
-    3. CALL describe_table for each relevant table.
+    1. Identify which tables from the available list are likely relevant (using the SCHEMA CONTEXT fragments as a guide).
+    2. Use search_relevant_schema and search_business_knowledge to confirm business rules and deeper schema.
+    3. CALL describe_table for each relevant table to get the exact final column names.
     4. Write the final SQL query.
     
     Once you have enough information, reply with:

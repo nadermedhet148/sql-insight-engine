@@ -462,21 +462,154 @@ function updateLoadingProgress(callStack) {
     const stepMapping = {
         'check_knowledge_base': 'step1Load',
         'check_tables': 'step1Load',
+        'relevance_check': 'step1Load', // Relevance check is part of step 1/2 transition
         'generate_query': 'step2Load',
+        'generate_query_agentic': 'step2Load',
         'execute_query': 'step3Load',
         'format_result': 'step4Load'
     };
 
     callStack.forEach(step => {
         const elementId = stepMapping[step.step_name];
-        if (elementId && step.status === 'success') {
+        if (elementId) {
             const element = document.getElementById(elementId);
             if (element) {
-                element.classList.add('completed');
-                element.classList.add('active'); // Keep it visible
+                if (step.status === 'success') {
+                    element.classList.add('completed');
+                    element.classList.add('active');
+                } else if (step.status === 'error' || step.status === 'failed') {
+                    element.classList.add('active');
+                    element.classList.remove('completed');
+                    // Add an error style if we had one, but visually keeping it active is enough for now
+                }
             }
         }
     });
+}
+
+function renderCallStack(callStack) {
+    if (!callStack || callStack.length === 0) return '<div class="text-muted">No processing data available</div>';
+
+    return callStack.map((step, index) => {
+        const stepTitle = step.step_name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+        const badgeClass = step.status === 'success' ? 'badge-success' : (step.status === 'error' || step.status === 'failed' ? 'badge-error' : 'badge-info');
+        const duration = step.duration_ms ? `${step.duration_ms.toFixed(0)}ms` : '';
+
+        let metadataHtml = '';
+        if (step.metadata) {
+            const m = step.metadata;
+
+            if (m.prompt) {
+                metadataHtml += `
+                    <div class="meta-section">
+                        <div class="meta-label">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                            Initial Prompt
+                        </div>
+                        <div class="meta-content">${m.prompt}</div>
+                    </div>`;
+            }
+
+            if (m.llm_reasoning) {
+                metadataHtml += `
+                    <div class="meta-section">
+                        <div class="meta-label">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+                            AI Reasoning
+                        </div>
+                        <div class="meta-content meta-content-rich">${m.llm_reasoning}</div>
+                    </div>`;
+            }
+
+            if (m.tools_used && m.tools_used.length > 0) {
+                metadataHtml += `
+                    <div class="meta-section">
+                        <div class="meta-label">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+                            Tools Called
+                        </div>
+                        <div class="tool-list">
+                            ${m.tools_used.map(t => `
+                                <div class="tool-item">
+                                    <div class="tool-name">${t.tool}</div>
+                                    <div class="tool-args">${JSON.stringify(t.args)}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>`;
+            }
+
+            if (m.available_tables) {
+                metadataHtml += `
+                    <div class="meta-section">
+                        <div class="meta-label">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"></path><path d="M21 9H3"></path><path d="M21 15H3"></path><path d="M9 3v18"></path><path d="M15 3v18"></path></svg>
+                            Database Discovery
+                        </div>
+                        <div class="meta-content">Found Tables: ${m.available_tables.join(', ')}</div>
+                    </div>`;
+            }
+
+            if (m.sql) {
+                metadataHtml += `
+                    <div class="meta-section">
+                        <div class="meta-label">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                            SQL Executed
+                        </div>
+                        <div class="meta-content">${m.sql}</div>
+                    </div>`;
+            }
+
+            if (m.usage) {
+                metadataHtml += `
+                    <div class="meta-section">
+                        <div class="meta-label">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                            Token Usage
+                        </div>
+                        <div class="meta-content">Prompt: ${m.usage.prompt_token_count} | Response: ${m.usage.candidates_token_count} | Total: ${m.usage.total_token_count}</div>
+                    </div>`;
+            }
+
+            if (m.reason) {
+                metadataHtml += `
+                    <div class="meta-section">
+                        <div class="meta-label">Status Details</div>
+                        <div class="meta-content">${m.reason}</div>
+                    </div>`;
+            }
+        }
+
+        return `
+            <div class="stack-item ${index === callStack.length - 1 ? 'open' : ''}" id="stack-item-${index}">
+                <div class="stack-header" onclick="toggleStackItem(${index})">
+                    <div class="stack-icon">${index + 1}</div>
+                    <div class="stack-title-group">
+                        <div class="stack-subtitle">STEP ${index + 1}</div>
+                        <div class="stack-title">${stepTitle}</div>
+                    </div>
+                    <span class="stack-badge ${badgeClass}">${step.status}</span>
+                    <div class="stack-duration">${duration}</div>
+                    <svg class="stack-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </div>
+                <div class="stack-body">
+                    <div class="stack-metadata">
+                        ${metadataHtml || '<div class="text-muted">No additional metadata for this step</div>'}
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function toggleStackItem(index) {
+    const item = document.getElementById(`stack-item-${index}`);
+    if (item) {
+        item.classList.toggle('open');
+    }
 }
 
 
@@ -484,66 +617,9 @@ function displayResults(data) {
     // Display formatted response
     document.getElementById('formattedResponse').innerHTML = formatMarkdown(data.formatted_response);
 
-    // Display reasoning - now includes call stack
-    let reasoningText = '';
-
-    if (data.call_stack && data.call_stack.length > 0) {
-        reasoningText = '';
-        data.call_stack.forEach((step, index) => {
-            const stepTitle = step.step_name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-            reasoningText += `【 STEP ${index + 1}: ${stepTitle} 】\n`;
-            reasoningText += `❯ Status: ${step.status.toUpperCase()}\n`;
-            if (step.duration_ms != null) {
-                reasoningText += `❯ Duration: ${step.duration_ms.toFixed(2)}ms\n`;
-            }
-
-            // Render Metadata based on step type
-            if (step.metadata) {
-                const meta = step.metadata;
-
-                if (meta.prompt) {
-                    reasoningText += `\n--- LLM PROMPT ---\n${meta.prompt}\n`;
-                }
-
-                if (meta.llm_reasoning) {
-                    reasoningText += `\n--- LLM REASONING ---\n${meta.llm_reasoning}\n`;
-                }
-
-                if (meta.tools_used && meta.tools_used.length > 0) {
-                    reasoningText += `\n--- TOOLS USED ---\n`;
-                    meta.tools_used.forEach(tool => {
-                        reasoningText += `  • ${tool.tool}(${JSON.stringify(tool.args)})\n`;
-                    });
-                }
-
-                if (meta.available_tables) {
-                    reasoningText += `\n--- TABLES FOUND ---\n${meta.available_tables.join(', ')}\n`;
-                }
-
-                if (meta.sql) {
-                    reasoningText += `\n--- SQL EXECUTED ---\n${meta.sql}\n`;
-                }
-
-                if (meta.usage) {
-                    reasoningText += `\n--- TOKEN USAGE ---\n`;
-                    reasoningText += `  • Prompt: ${meta.usage.prompt_token_count}\n`;
-                    reasoningText += `  • Response: ${meta.usage.candidates_token_count}\n`;
-                    reasoningText += `  • Total: ${meta.usage.total_token_count}\n`;
-                }
-            }
-            reasoningText += '\n' + '='.repeat(40) + '\n\n';
-        });
-
-        if (data.total_duration_ms) {
-            reasoningText += `TOTAL EXECUTION TIME: ${data.total_duration_ms.toFixed(2)}ms\n`;
-        }
-    } else if (data.reasoning) {
-        reasoningText = data.reasoning;
-    } else {
-        reasoningText = 'No reasoning available';
-    }
-
-    document.getElementById('reasoningContent').textContent = reasoningText;
+    // Render call stack as HTML
+    const reasoningContent = document.getElementById('reasoningContent');
+    reasoningContent.innerHTML = renderCallStack(data.call_stack);
 
     // Display SQL query
     document.getElementById('sqlQuery').textContent = data.generated_sql || 'No SQL query generated';
@@ -564,19 +640,16 @@ function displayResults(data) {
 }
 
 function displayError(message, callStack = null) {
-    let errorText = message;
+    document.getElementById('errorMessage').textContent = message;
 
-    if (callStack && callStack.length > 0) {
-        errorText += '\n\n=== Call Stack ===\n';
-        callStack.forEach((step, index) => {
-            errorText += `\n${index + 1}. ${step.step_name} - ${step.status}`;
-            if (step.duration_ms) {
-                errorText += ` (${step.duration_ms.toFixed(2)}ms)`;
-            }
-        });
+    // Also show call stack in reasoning tab even on error
+    if (callStack) {
+        document.getElementById('reasoningContent').innerHTML = renderCallStack(callStack);
+        document.getElementById('results').style.display = 'block';
+        // Select reasoning tab automatically on error to show where it failed
+        document.querySelector('.tab[data-tab="reasoning"]').click();
     }
 
-    document.getElementById('errorMessage').textContent = errorText;
     document.getElementById('errorState').style.display = 'block';
     document.getElementById('errorState').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
