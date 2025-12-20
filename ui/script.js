@@ -441,7 +441,7 @@ async function pollForResults(sagaId, maxAttempts = 60) {
                 loadingState.style.display = 'none';
                 submitBtn.disabled = false;
 
-                const errorMsg = statusData.result?.error_message || statusData.message || 'Query processing failed';
+                const errorMsg = statusData.result?.formatted_response || statusData.result?.error_message || statusData.message || 'Query processing failed';
                 displayError(errorMsg, statusData.result?.call_stack);
                 return;
             }

@@ -106,7 +106,8 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
     1. Identify which tables from the available list are likely relevant (using the SCHEMA CONTEXT fragments as a guide).
     2. Use search_relevant_schema and search_business_knowledge to confirm business rules and deeper schema.
     3. CALL describe_table for each relevant table to get the exact final column names.
-    4. Write the final SQL query.
+    4. If the question not realted to the avabile tables , you can say the question out of you bussiness scope.
+    5. Write the final SQL query.
     
     Once you have enough information, reply with:
     REASONING: [Your explanation]
@@ -165,6 +166,18 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
     # Clean SQL
     sql = sql.replace("```sql", "").replace("```", "").strip()
     if sql.endswith(";"): sql = sql[:-1]
+
+    # Detect if out of scope
+    is_out_of_scope = False
+    out_of_scope_keywords = ["out of your business scope", "out of you bussiness scope", "not related to the", "cannot answer", "missing data", "not related to any available tables", "out of scope"]
+    
+    if "SQL:" not in full_text:
+        # If no SQL provided, it's likely out of scope or failed
+        is_out_of_scope = True
+        reasoning = full_text.strip()
+    elif any(kw in full_text.lower() for kw in out_of_scope_keywords):
+        # Even if SQL is there, if it says it's out of scope, prioritize that
+        is_out_of_scope = True
     
     # Capture usage metadata if available
     usage = {}
@@ -175,7 +188,7 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
             "total_token_count": response.usage_metadata.total_token_count
         }
             
-    return sql, reasoning, prompt, usage, interaction_history
+    return sql, reasoning, prompt, usage, interaction_history, is_out_of_scope
 
 def run_async(coro):
     """Helper to run async coroutines in a synchronous context"""
@@ -217,7 +230,40 @@ def process_query_generation(ch, method, properties, body):
             db.close()
 
         # Run the synchronous agentic loop
-        generated_sql, llm_reasoning, llm_prompt, llm_usage, interaction_history = run_agentic_sql_generation(message, db_config_dict)
+        generated_sql, llm_reasoning, llm_prompt, llm_usage, interaction_history, is_out_of_scope = run_agentic_sql_generation(message, db_config_dict)
+        
+        if is_out_of_scope:
+            duration_ms = (time.time() - start_time) * 1000
+            print(f"[SAGA STEP 3] 🛑 Question is out of business scope: {llm_reasoning[:100]}...")
+            
+            # Update call stack
+            message.add_to_call_stack(
+                step_name="generate_query_agentic",
+                status="failed",
+                duration_ms=duration_ms,
+                reason=llm_reasoning,
+                is_out_of_scope=True
+            )
+            
+            # Store final result as "Irrelevant" and stop
+            from agentic_sql.saga.state_store import get_saga_state_store
+            saga_store = get_saga_state_store()
+            
+            result_dict = {
+                "success": False,
+                "saga_id": message.saga_id,
+                "question": message.question,
+                "error_message": "Out of DB Context",
+                "formatted_response": f"I'm sorry, I cannot answer that. This question is out of your database context. {llm_reasoning}",
+                "call_stack": [entry.to_dict() for entry in message.call_stack],
+                "status": "error",
+                "is_irrelevant": True
+            }
+            saga_store.store_result(message.saga_id, result_dict, status="error")
+            
+            # Acknowledge and stop saga
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
         
         # SQL Table Validation
         used_tables = extract_tables_from_sql(generated_sql)
