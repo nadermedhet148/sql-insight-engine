@@ -152,9 +152,10 @@ def process_tables_check(ch, method, properties, body):
                     "saga_id": message.saga_id,
                     "question": message.question,
                     "error_message": error_msg,
-                    "formatted_response": f"I cannot process your query because I couldn't find any tables in your database. {error_msg}",
+                    "formatted_response": "As your Senior Business Intelligence Consultant, I'm unable to provide insights because I couldn't find any data tables in your database. Please ensure your data is properly connected and synchronized.",
                     "call_stack": [entry.to_dict() for entry in message.call_stack],
-                    "status": "error"
+                    "status": "error",
+                    "is_irrelevant": True
                 }
                 saga_store.store_result(message.saga_id, result_dict, status="error")
                 
@@ -191,7 +192,7 @@ def process_tables_check(ch, method, properties, body):
                     "saga_id": message.saga_id,
                     "question": message.question,
                     "error_message": irrelevant_reason,
-                    "formatted_response": f"I'm sorry, I cannot answer that. {irrelevant_reason}",
+                    "formatted_response": "As your Senior Business Intelligence Consultant, I've determined that this inquiry falls outside our current business focus and database scope. I am unable to provide a response for this request.",
                     "call_stack": [entry.to_dict() for entry in message.call_stack],
                     "status": "error",
                     "is_irrelevant": True
@@ -248,11 +249,26 @@ def process_tables_check(ch, method, properties, body):
                 error=str(e)
             )
             
+            # Update state store
+            from agentic_sql.saga.state_store import get_saga_state_store
+            saga_store = get_saga_state_store()
+            
+            error_dict = {
+                "success": False,
+                "saga_id": message.saga_id,
+                "error_step": "check_tables",
+                "error_message": str(e),
+                "formatted_response": "As your Senior Business Intelligence Consultant, I encountered a technical hurdle while verifying your database schema. Please ensure your database is accessible and try again.",
+                "call_stack": [entry.to_dict() for entry in error_message.call_stack],
+                "status": "error"
+            }
+            saga_store.store_result(message.saga_id, error_dict, status="error")
+            
             # Publish error
             publisher = SagaPublisher()
             publisher.publish_error(error_message)
-        except:
-            pass
+        except Exception as store_err:
+            print(f"[SAGA STEP 2] Failed to log error to store: {store_err}")
         
         # Negative acknowledgment - don't requeue
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)

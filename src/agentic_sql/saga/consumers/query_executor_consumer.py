@@ -148,11 +148,26 @@ def process_query_execution(ch, method, properties, body):
                 error=str(e)
             )
             
+            # Update state store with professional error message
+            from agentic_sql.saga.state_store import get_saga_state_store
+            saga_store = get_saga_state_store()
+            
+            error_dict = {
+                "success": False,
+                "saga_id": message.saga_id,
+                "error_step": "execute_query",
+                "error_message": str(e),
+                "formatted_response": "As your Senior Business Intelligence Consultant, I encountered an unexpected issue while retrieving data from your database. Please ensure your database connection is stable and try again.",
+                "call_stack": [entry.to_dict() for entry in error_message.call_stack],
+                "status": "error"
+            }
+            saga_store.store_result(message.saga_id, error_dict, status="error")
+            
             # Publish error
             publisher = SagaPublisher()
             publisher.publish_error(error_message)
-        except:
-            pass
+        except Exception as store_err:
+            print(f"[SAGA STEP 4] Failed to log error to store: {store_err}")
         
         # Negative acknowledgment
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)

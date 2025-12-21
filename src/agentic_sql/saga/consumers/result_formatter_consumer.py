@@ -178,18 +178,20 @@ def process_result_formatting(ch, method, properties, body):
                 "saga_id": message.saga_id,
                 "error_step": "format_result",
                 "error_message": str(e),
+                "formatted_response": "As your Senior Business Intelligence Consultant, I successfully retrieved the data but encountered an issue while generating the final executive summary. I am working to improve my analysis capabilities.",
                 "call_stack": [entry.to_dict() for entry in error_message.call_stack],
                 "user_id": message.user_id,
-                "account_id": message.account_id
+                "account_id": message.account_id,
+                "status": "error"
             }
             
-            saga_store.store_result(message.saga_id, error_dict)
+            saga_store.store_result(message.saga_id, error_dict, status="error")
             
             # Publish error
             publisher = SagaPublisher()
             publisher.publish_error(error_message)
-        except:
-            pass
+        except Exception as store_err:
+            print(f"[SAGA STEP 5] Failed to log error to store: {store_err}")
         
         # Negative acknowledgment
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)

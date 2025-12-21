@@ -441,8 +441,12 @@ async function pollForResults(sagaId, maxAttempts = 60) {
                 loadingState.style.display = 'none';
                 submitBtn.disabled = false;
 
-                const errorMsg = statusData.result?.formatted_response || statusData.result?.error_message || statusData.message || 'Query processing failed';
-                displayError(errorMsg, statusData.result?.call_stack);
+                if (statusData.result && statusData.result.is_irrelevant) {
+                    displayResults(statusData.result);
+                } else {
+                    const errorMsg = statusData.result?.formatted_response || statusData.result?.error_message || statusData.message || 'Query processing failed';
+                    displayError(errorMsg, statusData.result?.call_stack);
+                }
                 return;
             }
 
@@ -621,22 +625,42 @@ function toggleStackItem(index) {
 
 
 function displayResults(data) {
+    const tabs = document.querySelector('.tabs');
+    const reasoningTab = document.querySelector('.tab[data-tab="reasoning"]');
+    const sqlTab = document.querySelector('.tab[data-tab="sql"]');
+    const rawTab = document.querySelector('.tab[data-tab="raw"]');
+
     // Display formatted response
     document.getElementById('formattedResponse').innerHTML = formatMarkdown(data.formatted_response);
 
-    // Render call stack as HTML
-    const reasoningContent = document.getElementById('reasoningContent');
-    reasoningContent.innerHTML = renderCallStack(data.call_stack);
+    if (data.is_irrelevant) {
+        // Hide technical tabs for irrelevant questions
+        if (reasoningTab) reasoningTab.style.display = 'none';
+        if (sqlTab) sqlTab.style.display = 'none';
+        if (rawTab) rawTab.style.display = 'none';
 
-    // Display SQL query
-    document.getElementById('sqlQuery').textContent = data.generated_sql || 'No SQL query generated';
-
-    // Display raw results
-    const rawResultsDiv = document.getElementById('rawResults');
-    if (data.raw_results) {
-        rawResultsDiv.innerHTML = formatMarkdownTable(data.raw_results);
+        // Ensure Answer tab is active
+        document.querySelector('.tab[data-tab="answer"]').click();
     } else {
-        rawResultsDiv.textContent = 'No raw results available';
+        // Show technical tabs for valid queries
+        if (reasoningTab) reasoningTab.style.display = 'block';
+        if (sqlTab) sqlTab.style.display = 'block';
+        if (rawTab) rawTab.style.display = 'block';
+
+        // Render call stack as HTML
+        const reasoningContent = document.getElementById('reasoningContent');
+        reasoningContent.innerHTML = renderCallStack(data.call_stack);
+
+        // Display SQL query
+        document.getElementById('sqlQuery').textContent = data.generated_sql || 'No SQL query generated';
+
+        // Display raw results
+        const rawResultsDiv = document.getElementById('rawResults');
+        if (data.raw_results) {
+            rawResultsDiv.innerHTML = formatMarkdownTable(data.raw_results);
+        } else {
+            rawResultsDiv.textContent = 'No raw results available';
+        }
     }
 
     // Show results

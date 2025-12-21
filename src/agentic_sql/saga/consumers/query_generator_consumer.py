@@ -254,7 +254,7 @@ def process_query_generation(ch, method, properties, body):
                 "saga_id": message.saga_id,
                 "question": message.question,
                 "error_message": "Out of DB Context",
-                "formatted_response": f"I'm sorry, I cannot answer that. This question is out of your database context. {llm_reasoning}",
+                "formatted_response": "As your Senior Business Intelligence Consultant, I've determined that this inquiry falls outside our current business focus and database scope. I am unable to provide a response for this request.",
                 "call_stack": [entry.to_dict() for entry in message.call_stack],
                 "status": "error",
                 "is_irrelevant": True
@@ -271,17 +271,37 @@ def process_query_generation(ch, method, properties, body):
         
         # Only validate if we actually have tables in the DB
         invalid_tables = [t for t in used_tables if t not in available_tables_lower]
-        
-        if invalid_tables and message.available_tables:
-            error_msg = f"Hallucination detected! The generated SQL uses tables that do NOT exist in the database: {', '.join(invalid_tables)}. Available tables are: {', '.join(message.available_tables)}"
-            print(f"[SAGA STEP 3] 🛑 {error_msg}")
-            raise Exception(error_msg)
-        
-        # If no tables found at all, but SQL was generated, check if it's a dummy/hallucinated query
-        if not message.available_tables and used_tables:
-            error_msg = "No tables found in your database, but the AI tried to query tables anyway. This usually means the question is irrelevant to your data."
-            print(f"[SAGA STEP 3] 🛑 {error_msg}")
-            raise Exception(error_msg)
+        if (invalid_tables and message.available_tables) or (not message.available_tables and used_tables):
+            duration_ms = (time.time() - start_time) * 1000
+            error_msg = "The inquiry seems to refer to data that is not available in our current scope."
+            
+            # Update call stack
+            message.add_to_call_stack(
+                step_name="generate_query_agentic",
+                status="failed",
+                duration_ms=duration_ms,
+                error="Hallucination/No tables check failed"
+            )
+            
+            # Store final result as "Irrelevant" and stop
+            from agentic_sql.saga.state_store import get_saga_state_store
+            saga_store = get_saga_state_store()
+            
+            result_dict = {
+                "success": False,
+                "saga_id": message.saga_id,
+                "question": message.question,
+                "error_message": "Out of DB Context",
+                "formatted_response": "As your Senior Business Intelligence Consultant, I've determined that this inquiry falls outside our current business focus and database scope. I am unable to provide a response for this request.",
+                "call_stack": [entry.to_dict() for entry in message.call_stack],
+                "status": "error",
+                "is_irrelevant": True
+            }
+            saga_store.store_result(message.saga_id, result_dict, status="error")
+            
+            # Acknowledge and stop saga
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
         
         duration_ms = (time.time() - start_time) * 1000
         
@@ -358,7 +378,8 @@ def process_query_generation(ch, method, properties, body):
                 saga_store.update_result(message.saga_id, {
                     "call_stack": [entry.to_dict() for entry in message.call_stack],
                     "status": "error",
-                    "error_message": str(e)
+                    "error_message": str(e),
+                    "formatted_response": "As your Senior Business Intelligence Consultant, I've encountered a challenge while trying to formulate a response to your question. This might be due to the complexity of the query or a transient technical issue. Please try rephrasing or submitting again."
                 })
         except Exception as store_err:
             print(f"[SAGA STEP 3] Failed to log error to store: {store_err}")
