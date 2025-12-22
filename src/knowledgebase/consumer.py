@@ -23,7 +23,7 @@ class KnowledgeBaseActionConsumer(BaseConsumer):
         
         self.gemini_client = GeminiClient()
 
-    def process_message(self, body):
+    def process_message(self, ch, method, properties, body):
         print(f"Received message: {body}")
         try:
             data = json.loads(body)
@@ -35,8 +35,14 @@ class KnowledgeBaseActionConsumer(BaseConsumer):
                 self.handle_delete(data)
             else:
                 print(f"Unknown action: {action}")
+            
+            # Acknowledge success
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            
         except Exception as e:
             print(f"Error processing message: {e}")
+            # BaseConsumer's callback will handle the nack
+            raise e
 
     def handle_add(self, data):
         account_id = data.get("account_id")

@@ -14,10 +14,17 @@ class BaseProducer:
             pika.ConnectionParameters(host=self.host)
         )
         self.channel = self.connection.channel()
-        self.channel.queue_declare(queue=self.queue_name)
+        self.channel.queue_declare(queue=self.queue_name, durable=True)
 
     def publish(self, message: str):
-        self.channel.basic_publish(exchange='', routing_key=self.queue_name, body=message)
+        self.channel.basic_publish(
+            exchange='',
+            routing_key=self.queue_name,
+            body=message,
+            properties=pika.BasicProperties(
+                delivery_mode=2,  # make message persistent
+            )
+        )
         print(f" [x] Sent '{message}' to queue '{self.queue_name}'")
 
     def close(self):

@@ -74,10 +74,10 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
     
     CRITICAL RULES:
     1. NEVER ASSUME table or column names. 
-    2. YOU MUST call `describe_table(table_name)` for EVERY table you include in your SQL. If you don't describe it, your answer will be rejected.
-    3. If the question requires data that isn't in any of the available tables, DO NOT invent tables or columns. State clearly that the data is missing.
-    4. Only use the tables listed below as "AVAILABLE REAL TABLES".
-    5. If you are unsure about how to answer (e.g., which tables to use or what certain business terms mean), YOU MUST use the search tools `search_relevant_schema` and `search_business_knowledge`.
+    2. use `search_business_knowledge` to find the relevant data with the user query this will to get more context about the question
+    3. YOU MUST call `describe_table(table_name)` for EVERY table you include in your SQL. If you don't describe it, your answer will be rejected.
+    4. If the question requires data that isn't in any of the available tables, DO NOT invent tables or columns. State clearly that the data is missing.
+    5. Only use the tables listed below as "AVAILABLE REAL TABLES".
     
     AVAILABLE REAL TABLES: {", ".join(message.available_tables) if message.available_tables else "NONE"}
     

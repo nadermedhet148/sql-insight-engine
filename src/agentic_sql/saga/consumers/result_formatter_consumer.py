@@ -71,10 +71,43 @@ def run_result_formatting_agentic(message: QueryExecutedMessage) -> tuple[str, s
                 "total_token_count": response.usage_metadata.total_token_count
             }
             
-        return formatted_response, text, usage
+        interaction_history = []
+        try:
+            from agentic_sql.saga.consumers.query_generator_consumer import sanitize_for_json
+            for msg in chat.history:
+                role = msg.role
+                parts = []
+                for part in msg.parts:
+                    if hasattr(part, "text") and part.text:
+                        parts.append({"text": part.text})
+                    elif hasattr(part, "function_call") and part.function_call:
+                        parts.append({
+                            "function_call": {
+                                "name": part.function_call.name,
+                                "args": dict(part.function_call.args)
+                            }
+                        })
+                    elif hasattr(part, "function_response") and part.function_response:
+                        resp = part.function_response.response
+                        if not isinstance(resp, (str, int, float, bool, list, dict, type(None))):
+                            resp = str(resp)
+                        
+                        parts.append({
+                            "function_response": {
+                                "name": part.function_response.name,
+                                "response": resp
+                            }
+                        })
+                interaction_history.append({"role": role, "parts": parts})
+            interaction_history = sanitize_for_json(interaction_history)
+        except Exception as e:
+            print(f"[SAGA STEP 5] Warning: Failed to capture interaction history: {e}")
+            interaction_history = []
+            
+        return formatted_response, text, usage, prompt, interaction_history
     except Exception as e:
         print(f"[SAGA STEP 5] Agentic formatting failed: {e}")
-        return f"Here are the findings from your data:\n\n{message.raw_results}", str(e), {}
+        return f"Here are the findings from your data:\n\n{message.raw_results}", str(e), {}, prompt, []
 
 from core.infra.consumer import BaseConsumer
 
@@ -98,7 +131,7 @@ def process_result_formatting(ch, method, properties, body):
         print(f"\n[SAGA STEP 5] Result Formatting (Agentic) - Saga ID: {message.saga_id}")
         
         # Agentic formatting
-        formatted_response, reasoning, llm_usage = run_result_formatting_agentic(message)
+        formatted_response, reasoning, llm_usage, llm_prompt, interaction_history = run_result_formatting_agentic(message)
         
         duration_ms = (time.time() - start_time) * 1000
         
@@ -125,7 +158,9 @@ def process_result_formatting(ch, method, properties, body):
             duration_ms=duration_ms,
             response_length=len(formatted_response),
             reasoning=reasoning,
-            usage=llm_usage
+            prompt=llm_prompt,
+            usage=llm_usage,
+            interaction_history=interaction_history
         )
         
         # Calculate total saga duration and tokens

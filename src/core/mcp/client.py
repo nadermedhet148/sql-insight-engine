@@ -49,6 +49,10 @@ class GenericMCPClient:
                         content=content_text
                     )
 
+                    print(f"[MCP] Tool {tool_name} call {'success' if mcp_result.success else 'failed'} in {duration_ms:.2f}ms")
+                    if not mcp_result.success:
+                        print(f"[MCP] Tool Error: {content_text}")
+
                     if message and hasattr(message, "track_tool_call"):
                         message.track_tool_call(
                             tool=tool_name,
@@ -193,8 +197,24 @@ class ChromaMCPClient(GenericMCPClient):
     def get_available_tools(self) -> List[Dict[str, Any]]:
         """Return the list of available MCP tools for Chroma"""
         return [
-            {"name": "search_relevant_schema", "description": "Search schema parts", "parameters": {"query": "string", "n_results": "integer"}},
-            {"name": "search_business_knowledge", "description": "Search business rules", "parameters": {"query": "string", "n_results": "integer"}}
+            {
+                "name": "search_relevant_schema", 
+                "description": "Search for relevant database schema parts (tables/columns) based on a semantic query.", 
+                "parameters": {
+                    "query": "string", 
+                    "account_id": "string",
+                    "n_results": "integer"
+                }
+            },
+            {
+                "name": "search_business_knowledge", 
+                "description": "Search for business rules, definitions, or organizational knowledge relevant to the query.", 
+                "parameters": {
+                    "query": "string", 
+                    "account_id": "string",
+                    "n_results": "integer"
+                }
+            }
         ]
 
 

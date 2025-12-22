@@ -1,10 +1,16 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
-from typing import Any
+from pydantic import BaseModel
+from typing import Any, Optional
 import json
 import io
 from core.infra.minio_client import get_minio_client
 from core.infra.producer import BaseProducer
 from minio.error import S3Error
+import logging
+from core.gemini_client import GeminiClient
+from core.infra.chroma_factory import ChromaClientFactory
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/knowledgebase",
@@ -12,23 +18,51 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-BUCKET_NAME = "knowledgebase"
-QUEUE_NAME = "document_ingestion"
+class QueryRequest(BaseModel):
+    account_id: str
+    query: str
+    n_results: int = 5
+    collection_name: str = "knowledgebase"
+
+from core.services.knowledge_service import index_text_content, BUCKET_NAME, QUEUE_NAME
 
 try:
     minio_client = get_minio_client()
     if not minio_client.bucket_exists(BUCKET_NAME):
         minio_client.make_bucket(BUCKET_NAME)
 except Exception as e:
-    print(f"Warning checking Minio bucket: {e}")
+    logger.warning(f"Warning checking Minio bucket: {e}")
 
-from core.services.knowledge_service import index_text_content, BUCKET_NAME, QUEUE_NAME
+@router.post("/query", response_model=Any)
+async def query_knowledgebase(request: QueryRequest):
+    """
+    Simple endpoint to query Chroma DB with account_id and query.
+    """
+    try:
+        gemini_client = GeminiClient()
+        chroma_client = ChromaClientFactory.get_client()
+        collection = chroma_client.get_or_create_collection(name=request.collection_name)
+        
+        # Generate embedding
+        query_embedding = gemini_client.get_embedding(request.query, task_type="retrieval_query")
+        
+        # Query Chroma
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=request.n_results,
+            where={"account_id": request.account_id}
+        )
+        
+        return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 @router.post("/", response_model=Any)
 async def add_document(
     account_id: str = Form(...),
     file: UploadFile = File(...)
 ):
+    print(f"[DEBUG] Uploading document: {file.filename} for account: {account_id}")
     if not (file.filename.lower().endswith(".md") or file.filename.lower().endswith(".txt")):
         raise HTTPException(status_code=400, detail="Only Markdown (.md) and Text (.txt) files are allowed.")
 
@@ -43,8 +77,8 @@ async def add_document(
             "message": "Document uploaded and queued for processing", 
             "object_name": object_name
         }
-        
     except Exception as e:
+        logger.exception(f"Error in add_document: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 

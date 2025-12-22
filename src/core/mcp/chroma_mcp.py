@@ -5,6 +5,7 @@ Provides tools for semantic search of relevant database schema information.
 import asyncio
 import os
 import sys
+import logging
 from typing import Any, List, Optional
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
@@ -12,12 +13,21 @@ from mcp.types import Tool, TextContent
 from core.infra.chroma_factory import ChromaClientFactory
 from core.gemini_client import GeminiClient
 
+# Configure logging to stderr
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    stream=sys.stderr
+)
+logger = logging.getLogger("chroma-mcp")
+
 class ChromaMCPServer:
     def __init__(self, server_name: str = "chroma-schema-search"):
         self.server_name = server_name
         self.server = Server(server_name)
         self.gemini_client = GeminiClient()
         self._setup_tools()
+        logger.info(f"Initialized ChromaMCPServer: {server_name}")
         
     def _get_collection(self, account_id: str):
         chroma_client = ChromaClientFactory.get_client()
@@ -55,13 +65,13 @@ class ChromaMCPServer:
                 ),
                 Tool(
                     name="search_business_knowledge",
-                    description="Search for business rules, definitions, or organizational knowledge relevant to the query. Use this if the user uses business terms that aren't clear from the table names alone.",
+                    description="Search for business rules, definitions, or organizational knowledge relevant to the query. Use this if the user uses business terms that aren't clear from the table names alone, and you should send the user query so we can found the revelevent data",
                     inputSchema={
                         "type": "object",
                         "properties": {
                             "query": {
                                 "type": "string",
-                                "description": "The business-related query (e.g., 'What is an active customer?')"
+                                "description": "A precise, keyword-focused semantic search string extracted from the user's question. Do not include phrases like 'I need to find' or 'search for'. Just the topic."
                             },
                             "account_id": {
                                 "type": "string",
@@ -80,11 +90,13 @@ class ChromaMCPServer:
 
         @self.server.call_tool()
         async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+            logger.info(f"Tool called: {name} with arguments: {arguments}")
             if name == "search_relevant_schema":
                 return await self._handle_search(arguments, "account_schema_info", "# Relevant Schema Information")
             elif name == "search_business_knowledge":
                 return await self._handle_search(arguments, "knowledgebase", "# Business Knowledge Context")
             
+            logger.error(f"Unknown tool: {name}")
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
     async def _handle_search(self, arguments: dict, collection_name: str, title: str) -> list[TextContent]:
@@ -105,11 +117,13 @@ class ChromaMCPServer:
                 n_results=n_results,
                 where={"account_id": account_id}
             )
-            
+            print(results)
             if not results or not results.get('documents') or not results['documents'][0]:
+                logger.info(f"No results found in {collection_name} for query: {query}")
                 return [TextContent(type="text", text=f"No relevant items found in {collection_name} for this query.")]
             
             context_docs = results['documents'][0]
+            logger.info(f"Found {len(context_docs)} results in {collection_name}")
             formatted_results = f"{title}\n\n"
             for idx, doc in enumerate(context_docs):
                 formatted_results += f"### Result {idx+1}:\n{doc}\n\n"
@@ -117,6 +131,7 @@ class ChromaMCPServer:
             return [TextContent(type="text", text=formatted_results)]
             
         except Exception as e:
+            logger.exception(f"Error searching {collection_name}: {str(e)}")
             return [TextContent(type="text", text=f"Error searching {collection_name}: {str(e)}")]
 
     async def run(self):

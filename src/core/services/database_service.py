@@ -72,6 +72,20 @@ class DatabaseService:
         except Exception as e:
             print(f"Warning: Failed to get table names: {e}")
             return []
+    def describe_table(self, db_config, table_name: str, message: Any = None) -> DatabaseOperationResult:
+        """Get detailed schema for a table via MCP tool"""
+        from core.mcp.client import create_mcp_client_from_config
+        
+        try:
+            client = create_mcp_client_from_config(db_config)
+            result = self._run_async(client.call_tool("describe_table", {"table_name": table_name}, message=message))
+            return DatabaseOperationResult(
+                success=result.success,
+                data=result.content,
+                error=result.error
+            )
+        except Exception as e:
+            return DatabaseOperationResult(success=False, data="", error=str(e))
 
 # Singleton instance
 database_service = DatabaseService()
