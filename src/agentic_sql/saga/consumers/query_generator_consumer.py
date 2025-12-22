@@ -15,7 +15,6 @@ from core.database.session import get_db
 from core.database.session import get_db
 
 def sanitize_for_json(obj):
-    """Deeply sanitize an object for JSON serialization, handling Gemini specific types like MapComposite"""
     if isinstance(obj, dict):
         return {k: sanitize_for_json(v) for k, v in obj.items()}
     elif isinstance(obj, (list, tuple)):
@@ -34,10 +33,7 @@ def sanitize_for_json(obj):
     return obj
 
 def extract_tables_from_sql(sql: str) -> List[str]:
-    """Extract table names from SQL SELECT query"""
     import re
-    # Match words after FROM or JOIN, ignoring subqueries and common SQL keywords
-    # This is a basic regex-based extraction
     pattern = r'(?:FROM|JOIN)\s+([a-zA-Z0-9_".]+)'
     matches = re.findall(pattern, sql, re.IGNORECASE)
     
@@ -55,33 +51,15 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
     db_client = DatabaseMCPClient(db_url)
     chroma_client = ChromaMCPClient()
     
-    def search_relevant_schema(query: str) -> str:
-        res = run_async(chroma_client.call_tool("search_relevant_schema", {
-            "query": query, 
-            "account_id": message.account_id
-        }, message=message))
-        return res.content if res.success else f"Error: {res.error}"
-
-    def search_business_knowledge(query: str) -> str:
-        res = run_async(chroma_client.call_tool("search_business_knowledge", {
-            "query": query, 
-            "account_id": message.account_id
-        }, message=message))
-        return res.content if res.success else f"Error: {res.error}"
-
-    def describe_table(table_name: str) -> str:
-        res = run_async(db_client.call_tool("describe_table", {"table_name": table_name}, message=message))
-        return res.content if res.success else f"Error: {res.error}"
-
-    def list_tables() -> str:
-        res = run_async(db_client.call_tool("list_tables", {}, message=message))
-        return res.content if res.success else f"Error: {res.error}"
-
-    # Setup Gemini with tools
-    tools = [search_relevant_schema, search_business_knowledge, describe_table, list_tables]
+    # Setup Gemini with tools using the shared helper
+    tools = [
+        db_client.get_gemini_tool("list_tables", message=message),
+        db_client.get_gemini_tool("describe_table", message=message),
+        chroma_client.get_gemini_tool("search_relevant_schema", message=message),
+        chroma_client.get_gemini_tool("search_business_knowledge", message=message)
+    ]
     agent = GeminiClient(tools=tools)
     
-    # Format contexts if available
     business_context_str = ""
     if hasattr(message, 'business_context') and message.business_context:
         business_context_str = "\nBUSINESS CONTEXT:\n" + "\n".join([f"- {doc}" for doc in message.business_context])
@@ -114,13 +92,11 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
     SQL: [The final SQL query]
     """
     
-    # Start the agentic loop
     chat = agent.model.start_chat(enable_automatic_function_calling=True)
     response = chat.send_message(prompt)
     
     full_text = response.text
     
-    # Capture full interaction history for debugging
     interaction_history = []
     try:
         for message in chat.history:
@@ -137,7 +113,6 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
                         }
                     })
                 elif hasattr(part, "function_response") and part.function_response:
-                    # Sanitize response for JSON serialization
                     resp = part.function_response.response
                     if not isinstance(resp, (str, int, float, bool, list, dict, type(None))):
                         resp = str(resp)
@@ -153,7 +128,6 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
         print(f"[SAGA STEP 3] Warning: Failed to serialize full interaction history: {e}")
         interaction_history = [{"error": "Serialization failed", "details": str(e)}]
 
-    # Simple parser for the standard output format
     reasoning = "N/A"
     sql = ""
     if "SQL:" in full_text:
@@ -163,7 +137,6 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
     else:
         sql = full_text.strip()
         
-    # Clean SQL
     sql = sql.replace("```sql", "").replace("```", "").strip()
     if sql.endswith(";"): sql = sql[:-1]
 
@@ -190,19 +163,17 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
             
     return sql, reasoning, prompt, usage, interaction_history, is_out_of_scope
 
-def run_async(coro):
-    """Helper to run async coroutines in a synchronous context"""
-    import nest_asyncio
-    nest_asyncio.apply()
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    return loop.run_until_complete(coro)
+
+from core.infra.consumer import BaseConsumer
+
+class QueryGeneratorConsumer(BaseConsumer):
+    def __init__(self, host: str = None):
+        super().__init__(queue_name=SagaPublisher.QUEUE_GENERATE_QUERY, host=host)
+
+    def process_message(self, ch, method, properties, body):
+        process_query_generation(ch, method, properties, body)
 
 def process_query_generation(ch, method, properties, body):
-    """Process query generation step using async agentic loop"""
     start_time = time.time()
     
     try:
@@ -213,6 +184,8 @@ def process_query_generation(ch, method, properties, body):
         
         # Get DB config
         db_config_dict = {}
+        from core.database.session import get_db
+        from account.models import User
         db = next(get_db())
         try:
             user = db.query(User).filter(User.id == message.user_id).first()
@@ -229,7 +202,6 @@ def process_query_generation(ch, method, properties, body):
         finally:
             db.close()
 
-        # Run the synchronous agentic loop
         generated_sql, llm_reasoning, llm_prompt, llm_usage, interaction_history, is_out_of_scope = run_agentic_sql_generation(message, db_config_dict)
         
         if is_out_of_scope:
@@ -265,11 +237,9 @@ def process_query_generation(ch, method, properties, body):
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
         
-        # SQL Table Validation
         used_tables = extract_tables_from_sql(generated_sql)
         available_tables_lower = [t.lower() for t in message.available_tables]
         
-        # Only validate if we actually have tables in the DB
         invalid_tables = [t for t in used_tables if t not in available_tables_lower]
         if (invalid_tables and message.available_tables) or (not message.available_tables and used_tables):
             duration_ms = (time.time() - start_time) * 1000
@@ -299,13 +269,10 @@ def process_query_generation(ch, method, properties, body):
             }
             saga_store.store_result(message.saga_id, result_dict, status="error")
             
-            # Acknowledge and stop saga
-            ch.basic_ack(delivery_tag=method.delivery_tag)
             return
         
         duration_ms = (time.time() - start_time) * 1000
         
-        # Create next message
         next_message = QueryGeneratedMessage(
             saga_id=message.saga_id,
             user_id=message.user_id,
@@ -318,12 +285,10 @@ def process_query_generation(ch, method, properties, body):
             business_documents_count=getattr(message, "business_documents_count", 0)
         )
         
-        # Copy call stack and pending tool calls
         next_message.call_stack = message.call_stack.copy()
         next_message._current_tool_calls = message._current_tool_calls.copy()
         message._current_tool_calls = []
         
-        # Add this step to call stack
         next_message.add_to_call_stack(
             step_name="generate_query_agentic",
             status="success",
@@ -359,12 +324,10 @@ def process_query_generation(ch, method, properties, body):
         duration_ms = (time.time() - start_time) * 1000
         print(f"[SAGA STEP 3] ✗ Agentic Error: {str(e)}")
         
-        # Log error to state store
         try:
             from agentic_sql.saga.state_store import get_saga_state_store
             saga_store = get_saga_state_store()
             
-            # Create a mock message to add to call stack if real one failed early
             error_data = {
                 "step_name": "generate_query_agentic",
                 "status": "error",
@@ -372,7 +335,6 @@ def process_query_generation(ch, method, properties, body):
                 "error": str(e)
             }
             
-            # If we have the original message, we can append to its call stack
             if 'message' in locals():
                 message.add_to_call_stack(**error_data)
                 saga_store.update_result(message.saga_id, {
@@ -387,18 +349,6 @@ def process_query_generation(ch, method, properties, body):
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 def start_query_generator_consumer(host: str = None):
-    host = host or "localhost"
-    try:
-        credentials = pika.PlainCredentials('guest', 'guest')
-        parameters = pika.ConnectionParameters(host=host, credentials=credentials, heartbeat=600)
-        connection = pika.BlockingConnection(parameters)
-        channel = connection.channel()
-        queue_name = SagaPublisher.QUEUE_GENERATE_QUERY
-        channel.queue_declare(queue=queue_name, durable=True)
-        channel.basic_qos(prefetch_count=1)
-        channel.basic_consume(queue=queue_name, on_message_callback=process_query_generation)
-        print(f"\n[SAGA STEP 3] Agentic Query Generator Started")
-        channel.start_consuming()
-    except Exception as e:
-        print(f"[SAGA STEP 3] Failed: {e}")
+    consumer = QueryGeneratorConsumer(host=host)
+    consumer.start_consuming()
 

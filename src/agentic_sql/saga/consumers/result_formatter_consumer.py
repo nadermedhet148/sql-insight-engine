@@ -5,9 +5,10 @@ Formats the query result using Gemini LLM and stores final result.
 This is the final step in the saga.
 """
 
-import pika
+import asyncio
 import json
 import time
+from typing import Dict, Any, List
 from agentic_sql.saga.messages import (
     QueryExecutedMessage, ResultFormattedMessage,
     SagaErrorMessage, message_from_dict
@@ -15,36 +16,53 @@ from agentic_sql.saga.messages import (
 from agentic_sql.saga.publisher import SagaPublisher
 from agentic_sql.saga.state_store import get_saga_state_store
 from core.gemini_client import GeminiClient
+from core.mcp.client import DatabaseMCPClient, ChromaMCPClient
 
-# Initialize client
-gemini_client = GeminiClient(model_name="models/gemini-2.0-flash")
 
-def format_results_logic(question: str, sql_query: str, raw_results: str) -> str:
-    """Logic to format results using Gemini LLM"""
+
+def run_result_formatting_agentic(message: QueryExecutedMessage) -> tuple[str, str, Dict[str, Any]]:
+    """Use Gemini with tools to format results and provide professional insights"""
+    chroma_client = ChromaMCPClient()
+    
+    tools = [
+        chroma_client.get_gemini_tool("search_relevant_schema", message=message),
+        chroma_client.get_gemini_tool("search_business_knowledge", message=message)
+    ]
+    agent = GeminiClient(tools=tools)
+    
+    prompt = f"""
+    You are a Senior Business Intelligence Consultant. Your goal is to transform technical database results into a professional executive summary.
+    
+    USER QUESTION: "{message.question}"
+    
+    SQL LOGIC USED:
+    {message.generated_sql}
+    
+    RAW DATABASE RESULTS:
+    {message.raw_results}
+    
+    INSTRUCTIONS:
+    1. If you need more business context or schema details to explain the results better, use the search tools.
+    2. Format the response for an executive: focus on insights, trends, and business impact.
+    3. Start with the "Bottom Line" or most important finding.
+    4. Use professional domain-specific terminology.
+    5. Avoid technical jargon like "SQL", "JOINs", or column names unless necessary for clarity.
+    
+    REPLY WITH:
+    EXECUTIVE SUMMARY: [Your professional response]
+    """
+    
     try:
-        prompt = f"""You are a Senior Business Intelligence Consultant. Your task is to transform technical database results into a professional executive summary.
-
-        USER QUESTION: "{question}"
+        chat = agent.model.start_chat(enable_automatic_function_calling=True)
+        response = chat.send_message(prompt)
+        text = response.text
         
-        DATA CONTEXT:
-        The following data was retrieved from the live production database using this logic:
-        {sql_query}
-
-        RAW DATABASE RESULTS:
-        {raw_results}
-
-        INSTRUCTIONS FOR YOUR RESPONSE:
-        1.  **Business Language**: Use domain-specific business terms (e.g., "Revenue Growth", "Customer Retention", "Market Share") rather than technical column names.
-        2.  **Executive Summary**: Start with the most important finding or "bottom line" result.
-        3.  **Formatting**: Use clean bullet points or short paragraphs. Avoid any CSV-style formatting or markdown tables in the final text.
-        4.  **No Jargon**: Never mention SQL, Joins, or database technicalities in your final answer.
-
-        PROFESSIONAL BUSINESS RESPONSE:"""
-        
-        response = gemini_client.generate_content(prompt)
-        formatted_response = response.text.strip() if response else ""
-        
-        # Capture usage metadata
+        formatted_response = ""
+        if "EXECUTIVE SUMMARY:" in text:
+            formatted_response = text.split("EXECUTIVE SUMMARY:")[1].strip()
+        else:
+            formatted_response = text.strip()
+            
         usage = {}
         if hasattr(response, "usage_metadata"):
             usage = {
@@ -53,12 +71,19 @@ def format_results_logic(question: str, sql_query: str, raw_results: str) -> str
                 "total_token_count": response.usage_metadata.total_token_count
             }
             
-        return formatted_response, prompt, usage
-        
+        return formatted_response, text, usage
     except Exception as e:
-        print(f"[SAGA STEP 5] Error formatting results: {e}")
-        return f"Here are the results:\n\n{raw_results}", prompt, {}
+        print(f"[SAGA STEP 5] Agentic formatting failed: {e}")
+        return f"Here are the findings from your data:\n\n{message.raw_results}", str(e), {}
 
+from core.infra.consumer import BaseConsumer
+
+class ResultFormatterConsumer(BaseConsumer):
+    def __init__(self, host: str = None):
+        super().__init__(queue_name=SagaPublisher.QUEUE_FORMAT_RESULT, host=host)
+
+    def process_message(self, ch, method, properties, body):
+        process_result_formatting(ch, method, properties, body)
 
 def process_result_formatting(ch, method, properties, body):
     """Process result formatting step - FINAL STEP"""
@@ -70,19 +95,13 @@ def process_result_formatting(ch, method, properties, body):
         data = json.loads(body)
         message = message_from_dict(data, QueryExecutedMessage)
         
-        print(f"\n[SAGA STEP 5] Result Formatting - Saga ID: {message.saga_id}")
+        print(f"\n[SAGA STEP 5] Result Formatting (Agentic) - Saga ID: {message.saga_id}")
         
-        # Logic moved from QueryService
-        print(f"[SAGA STEP 5] Formatting results using Gemini LLM...")
-        formatted_response, llm_prompt, llm_usage = format_results_logic(
-            message.question,
-            message.generated_sql,
-            message.raw_results
-        )
+        # Agentic formatting
+        formatted_response, reasoning, llm_usage = run_result_formatting_agentic(message)
         
         duration_ms = (time.time() - start_time) * 1000
         
-        print(f"[SAGA STEP 5] Formatting Reasoning: Summarizing data for business relevance")
         print(f"[SAGA STEP 5] Step Token Usage: {llm_usage}")
         print(f"[SAGA STEP 5] ✓ Results formatted successfully in {duration_ms:.2f}ms")
         
@@ -99,16 +118,13 @@ def process_result_formatting(ch, method, properties, body):
             error=None
         )
         
-        # Copy call stack
         final_message.call_stack = message.call_stack.copy()
-        
-        # Add this step to call stack
         final_message.add_to_call_stack(
-            step_name="format_result",
+            step_name="format_result_agentic",
             status="success",
             duration_ms=duration_ms,
             response_length=len(formatted_response),
-            prompt=llm_prompt,
+            reasoning=reasoning,
             usage=llm_usage
         )
         
@@ -120,6 +136,8 @@ def process_result_formatting(ch, method, properties, body):
                 total_duration += entry.duration_ms
             if entry.metadata and "usage" in entry.metadata:
                 total_tokens += entry.metadata["usage"].get("total_token_count", 0)
+            elif entry.metadata and "total_token_count" in entry.metadata: # Legacy format check
+                total_tokens += entry.metadata["total_token_count"]
         
         print(f"[SAGA STEP 5] 🎉 SAGA COMPLETED SUCCESSFULLY!")
         print(f"[SAGA STEP 5] Total duration: {total_duration:.2f}ms")
@@ -141,102 +159,53 @@ def process_result_formatting(ch, method, properties, body):
         
         saga_store.store_result(message.saga_id, result_dict)
         
-        # Acknowledge message
         ch.basic_ack(delivery_tag=method.delivery_tag)
         
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
         print(f"[SAGA STEP 5] ✗ Error: {str(e)}")
         
-        # Create error message
         try:
-            data = json.loads(body)
-            message = message_from_dict(data, QueryExecutedMessage)
-            
+            from agentic_sql.saga.messages import SagaErrorMessage
             error_message = SagaErrorMessage(
                 saga_id=message.saga_id,
                 user_id=message.user_id,
                 account_id=message.account_id,
                 question=message.question,
-                error_step="format_result",
+                error_step="format_result_agentic",
                 error_message=str(e),
                 error_details={"duration_ms": duration_ms}
             )
             
-            error_message.call_stack = message.call_stack.copy()
-            error_message._current_tool_calls = message._current_tool_calls.copy()
-            error_message.add_to_call_stack(
-                step_name="format_result",
+            message.add_to_call_stack(
+                step_name="format_result_agentic",
                 status="error",
                 duration_ms=duration_ms,
                 error=str(e)
             )
             
-            # Store error result
             error_dict = {
                 "success": False,
                 "saga_id": message.saga_id,
-                "error_step": "format_result",
+                "error_step": "format_result_agentic",
                 "error_message": str(e),
-                "formatted_response": "As your Senior Business Intelligence Consultant, I successfully retrieved the data but encountered an issue while generating the final executive summary. I am working to improve my analysis capabilities.",
-                "call_stack": [entry.to_dict() for entry in error_message.call_stack],
+                "formatted_response": "As your Senior Business Intelligence Consultant, I successfully retrieved the data but encountered an issue while generating the final executive summary.",
+                "call_stack": [entry.to_dict() for entry in message.call_stack],
                 "user_id": message.user_id,
                 "account_id": message.account_id,
                 "status": "error"
             }
-            
             saga_store.store_result(message.saga_id, error_dict, status="error")
             
-            # Publish error
-            publisher = SagaPublisher()
-            publisher.publish_error(error_message)
-        except Exception as store_err:
-            print(f"[SAGA STEP 5] Failed to log error to store: {store_err}")
+            SagaPublisher().publish_error(error_message)
+        except Exception:
+            pass
         
-        # Negative acknowledgment
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 
 def start_result_formatter_consumer(host: str = None):
     """Start the result formatter consumer"""
-    from agentic_sql.saga.publisher import SagaPublisher
-    
-    host = host or "localhost"
-    
-    try:
-        # Setup connection
-        credentials = pika.PlainCredentials('guest', 'guest')
-        parameters = pika.ConnectionParameters(
-            host=host,
-            credentials=credentials,
-            heartbeat=600
-        )
-        
-        connection = pika.BlockingConnection(parameters)
-        channel = connection.channel()
-        
-        # Declare queue
-        queue_name = SagaPublisher.QUEUE_FORMAT_RESULT
-        channel.queue_declare(queue=queue_name, durable=True)
-        
-        # Set QoS
-        channel.basic_qos(prefetch_count=1)
-        
-        # Start consuming
-        channel.basic_consume(
-            queue=queue_name,
-            on_message_callback=process_result_formatting
-        )
-        
-        print(f"\n[SAGA STEP 5] Result Formatter Consumer Started")
-        print(f"[SAGA STEP 5] Waiting for messages on '{queue_name}'...")
-        
-        channel.start_consuming()
-        
-    except KeyboardInterrupt:
-        print("\n[SAGA STEP 5] Shutting down...")
-        channel.stop_consuming()
-        connection.close()
-    except Exception as e:
-        print(f"[SAGA STEP 5] Failed to start consumer: {e}")
+    consumer = ResultFormatterConsumer(host=host)
+    consumer.start_consuming()
 

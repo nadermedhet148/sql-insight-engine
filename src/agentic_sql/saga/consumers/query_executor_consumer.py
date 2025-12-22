@@ -1,20 +1,64 @@
-"""
-Saga Step 4: Execute SQL Query
-
-Executes the generated SQL query on user's database.
-"""
-
-import pika
+import asyncio
 import json
 import time
+from typing import Dict, Any, List
 from agentic_sql.saga.messages import (
     QueryGeneratedMessage, QueryExecutedMessage,
     SagaErrorMessage, message_from_dict
 )
 from agentic_sql.saga.publisher import SagaPublisher
-from core.services.database_service import database_service
-from account.models import UserDBConfig
+from core.gemini_client import GeminiClient
+from core.mcp.client import DatabaseMCPClient
 
+
+
+def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, Any]) -> tuple[bool, str, str]:
+    """Use Gemini with run_query MCP tool to execute the query and handle potential errors"""
+    db_url = f"postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}"
+    db_client = DatabaseMCPClient(db_url)
+    
+    tools = [db_client.get_gemini_tool("run_query", message=message)]
+    agent = GeminiClient(tools=tools)
+    
+    prompt = f"""
+    You are a Database Operations Agent. Your task is to execute the following SQL query and return the results.
+    
+    SQL QUERY:
+    {message.generated_sql}
+    
+    INSTRUCTIONS:
+    1. Call the `run_query` tool with the provided SQL.
+    2. If the query is successful, return the exact raw results.
+    3. If the query fails with an error, explain the error clearly.
+    
+    RESPONSE FORMAT:
+    STATUS: [SUCCESS/FAILED]
+    RESULTS: [The raw table results or the error message]
+    """
+    
+    try:
+        chat = agent.model.start_chat(enable_automatic_function_calling=True)
+        response = chat.send_message(prompt)
+        text = response.text
+        
+        success = "STATUS: SUCCESS" in text
+        results = ""
+        if "RESULTS:" in text:
+            results = text.split("RESULTS:")[1].strip()
+        
+        return success, results, text # Return full text as reasoning
+    except Exception as e:
+        print(f"[SAGA STEP 4] Agentic query execution failed: {e}")
+        return False, str(e), "Execution error"
+
+from core.infra.consumer import BaseConsumer
+
+class QueryExecutorConsumer(BaseConsumer):
+    def __init__(self, host: str = None):
+        super().__init__(queue_name=SagaPublisher.QUEUE_EXECUTE_QUERY, host=host)
+
+    def process_message(self, ch, method, properties, body):
+        process_query_execution(ch, method, properties, body)
 
 def process_query_execution(ch, method, properties, body):
     """Process query execution step"""
@@ -25,48 +69,54 @@ def process_query_execution(ch, method, properties, body):
         data = json.loads(body)
         message = message_from_dict(data, QueryGeneratedMessage)
         
-        print(f"\n[SAGA STEP 4] Query Execution - Saga ID: {message.saga_id}")
+        print(f"\n[SAGA STEP 4] Query Execution (Agentic) - Saga ID: {message.saga_id}")
         
-        # Reconstruct DB config object
-        db_config = UserDBConfig(
-            host=message.db_config.get("host"),
-            port=message.db_config.get("port"),
-            db_name=message.db_config.get("db_name"),
-            username=message.db_config.get("username"),
-            password=message.db_config.get("password"),
-            db_type=message.db_config.get("db_type", "postgresql")
-        )
+        # db_config_dict for MCP client
+        db_config_dict = message.db_config
         
-        # Logic calling database_service (no QueryService needed)
-        print(f"[SAGA STEP 4] Executing SQL on user database...")
-        execution_result = database_service.execute_query(db_config, message.generated_sql, message=message)
+        # Agentic query execution
+        success, raw_results, reasoning = run_query_agentic(message, db_config_dict)
         
         duration_ms = (time.time() - start_time) * 1000
         
-        if not execution_result.success:
-            print(f"[SAGA STEP 4] ✗ Query execution failed: {execution_result.error}")
+        if not success:
+            print(f"[SAGA STEP 4] ✗ Agentic execution failed: {raw_results[:100]}...")
             
             error_message = SagaErrorMessage(
                 saga_id=message.saga_id,
                 user_id=message.user_id,
                 account_id=message.account_id,
                 question=message.question,
-                error_step="execute_query",
-                error_message=execution_result.error,
+                error_step="execute_query_agentic",
+                error_message=raw_results,
                 error_details={
                     "duration_ms": duration_ms,
                     "sql": message.generated_sql
                 }
             )
             
-            error_message.call_stack = message.call_stack.copy()
-            error_message._current_tool_calls = message._current_tool_calls.copy()
-            error_message.add_to_call_stack(
-                step_name="execute_query",
+            message.add_to_call_stack(
+                step_name="execute_query_agentic",
                 status="error",
                 duration_ms=duration_ms,
-                error=execution_result.error
+                error=raw_results,
+                reasoning=reasoning
             )
+            
+            # Update state store
+            from agentic_sql.saga.state_store import get_saga_state_store
+            saga_store = get_saga_state_store()
+            
+            error_dict = {
+                "success": False,
+                "saga_id": message.saga_id,
+                "error_step": "execute_query_agentic",
+                "error_message": raw_results,
+                "formatted_response": f"As your Senior Business Intelligence Consultant, I encountered an issue while retrieving data: {raw_results}",
+                "call_stack": [entry.to_dict() for entry in message.call_stack],
+                "status": "error"
+            }
+            saga_store.store_result(message.saga_id, error_dict, status="error")
             
             publisher = SagaPublisher()
             publisher.publish_error(error_message)
@@ -75,9 +125,7 @@ def process_query_execution(ch, method, properties, body):
             return
         
         # Success
-        raw_results = execution_result.data
         result_lines = raw_results.split('\n') if raw_results else []
-        
         print(f"[SAGA STEP 4] ✓ Query executed successfully in {duration_ms:.2f}ms")
         
         # Create next message
@@ -92,18 +140,17 @@ def process_query_execution(ch, method, properties, body):
             execution_error=None
         )
         
-        # Copy call stack and pending tool calls
         next_message.call_stack = message.call_stack.copy()
         next_message._current_tool_calls = message._current_tool_calls.copy()
         message._current_tool_calls = []
         
-        # Add this step to call stack
         next_message.add_to_call_stack(
-            step_name="execute_query",
+            step_name="execute_query_agentic",
             status="success",
             duration_ms=duration_ms,
             result_lines=len(result_lines),
-            sql=message.generated_sql
+            sql=message.generated_sql,
+            reasoning=reasoning
         )
         
         # Publish to next step
@@ -118,101 +165,53 @@ def process_query_execution(ch, method, properties, body):
             "raw_results": raw_results
         })
         
-        # Acknowledge message
         ch.basic_ack(delivery_tag=method.delivery_tag)
         
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
         print(f"[SAGA STEP 4] ✗ Error: {str(e)}")
         
-        # Create error message
         try:
-            data = json.loads(body)
-            message = message_from_dict(data, QueryGeneratedMessage)
-            
+            from agentic_sql.saga.messages import SagaErrorMessage
             error_message = SagaErrorMessage(
                 saga_id=message.saga_id,
                 user_id=message.user_id,
                 account_id=message.account_id,
                 question=message.question,
-                error_step="execute_query",
+                error_step="execute_query_agentic",
                 error_message=str(e),
                 error_details={"duration_ms": duration_ms}
             )
             
-            error_message.call_stack = message.call_stack.copy()
-            error_message.add_to_call_stack(
-                step_name="execute_query",
+            message.add_to_call_stack(
+                step_name="execute_query_agentic",
                 status="error",
                 duration_ms=duration_ms,
                 error=str(e)
             )
             
-            # Update state store with professional error message
             from agentic_sql.saga.state_store import get_saga_state_store
             saga_store = get_saga_state_store()
             
             error_dict = {
                 "success": False,
                 "saga_id": message.saga_id,
-                "error_step": "execute_query",
+                "error_step": "execute_query_agentic",
                 "error_message": str(e),
-                "formatted_response": "As your Senior Business Intelligence Consultant, I encountered an unexpected issue while retrieving data from your database. Please ensure your database connection is stable and try again.",
-                "call_stack": [entry.to_dict() for entry in error_message.call_stack],
+                "formatted_response": "As your Senior Business Intelligence Consultant, I encountered an unexpected issue while retrieving data. Please try again.",
+                "call_stack": [entry.to_dict() for entry in message.call_stack],
                 "status": "error"
             }
             saga_store.store_result(message.saga_id, error_dict, status="error")
             
-            # Publish error
-            publisher = SagaPublisher()
-            publisher.publish_error(error_message)
-        except Exception as store_err:
-            print(f"[SAGA STEP 4] Failed to log error to store: {store_err}")
+            SagaPublisher().publish_error(error_message)
+        except Exception:
+            pass
         
-        # Negative acknowledgment
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 
 def start_query_executor_consumer(host: str = None):
-    """Start the query executor consumer"""
-    from agentic_sql.saga.publisher import SagaPublisher
-    
-    host = host or "localhost"
-    
-    try:
-        # Setup connection
-        credentials = pika.PlainCredentials('guest', 'guest')
-        parameters = pika.ConnectionParameters(
-            host=host,
-            credentials=credentials,
-            heartbeat=600
-        )
-        
-        connection = pika.BlockingConnection(parameters)
-        channel = connection.channel()
-        
-        # Declare queue
-        queue_name = SagaPublisher.QUEUE_EXECUTE_QUERY
-        channel.queue_declare(queue=queue_name, durable=True)
-        
-        # Set QoS
-        channel.basic_qos(prefetch_count=1)
-        
-        # Start consuming
-        channel.basic_consume(
-            queue=queue_name,
-            on_message_callback=process_query_execution
-        )
-        
-        print(f"\n[SAGA STEP 4] Query Executor Consumer Started")
-        print(f"[SAGA STEP 4] Waiting for messages on '{queue_name}'...")
-        
-        channel.start_consuming()
-        
-    except KeyboardInterrupt:
-        print("\n[SAGA STEP 4] Shutting down...")
-        channel.stop_consuming()
-        connection.close()
-    except Exception as e:
-        print(f"[SAGA STEP 4] Failed to start consumer: {e}")
+    consumer = QueryExecutorConsumer(host=host)
+    consumer.start_consuming()
 

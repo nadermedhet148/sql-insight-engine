@@ -90,7 +90,7 @@ class ChromaMCPServer:
     async def _handle_search(self, arguments: dict, collection_name: str, title: str) -> list[TextContent]:
         query = arguments["query"]
         account_id = str(arguments["account_id"])
-        n_results = arguments.get("n_results", 2 if collection_name == "account_schema_info" else 1)
+        n_results = int(arguments.get("n_results", 2 if collection_name == "account_schema_info" else 1))
         
         try:
             chroma_client = ChromaClientFactory.get_client()

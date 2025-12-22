@@ -71,6 +71,106 @@ class GenericMCPClient:
                 )
             return MCPToolResult(success=False, content="", error=str(e))
 
+    def _run_tool_sync(self, tool_name: str, kwargs: Dict[str, Any], message: Any = None) -> str:
+        import nest_asyncio
+        import asyncio
+        
+        try:
+            nest_asyncio.apply()
+        except:
+            pass
+            
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        # Inject account_id if available in message and expected by tool
+        if message and hasattr(message, 'account_id') and tool_name in ["search_relevant_schema", "search_business_knowledge"]:
+            kwargs["account_id"] = message.account_id
+            
+        res = loop.run_until_complete(self.call_tool(tool_name, kwargs, message=message))
+        return res.content if res.success else f"Error: {res.error}"
+
+    def get_gemini_tool(self, tool_name: str, message: Any = None):
+        """Returns a tool function that Gemini can call, which internally calls the MCP tool."""
+        
+        if tool_name == "search_relevant_schema":
+            def search_relevant_schema(query: str, n_results: int = 2) -> str:
+                """
+                Search for relevant database tables and columns based on a semantic query.
+                
+                Args:
+                    query: The semantic search query (e.g., 'customer orders and payments')
+                    n_results: Number of results to return (default: 2)
+                """
+                return self._run_tool_sync("search_relevant_schema", {"query": query, "n_results": int(n_results)}, message)
+            return search_relevant_schema
+            
+        elif tool_name == "search_business_knowledge":
+            def search_business_knowledge(query: str, n_results: int = 1) -> str:
+                """
+                Search for business rules, definitions, or organizational knowledge.
+                
+                Args:
+                    query: The business-related query (e.g., 'What is an active customer?')
+                    n_results: Number of results to return (default: 1)
+                """
+                return self._run_tool_sync("search_business_knowledge", {"query": query, "n_results": int(n_results)}, message)
+            return search_business_knowledge
+            
+        elif tool_name == "list_tables":
+            def list_tables(schema: str = "public") -> str:
+                """
+                List all tables in the database.
+                
+                Args:
+                    schema: Schema name (default: public)
+                """
+                return self._run_tool_sync("list_tables", {"schema": schema}, message)
+            return list_tables
+            
+        elif tool_name == "describe_table":
+            def describe_table(table_name: str, schema: str = "public") -> str:
+                """
+                Get detailed schema information about a specific table.
+                
+                Args:
+                    table_name: Name of the table to describe
+                    schema: Schema name (default: public)
+                """
+                return self._run_tool_sync("describe_table", {"table_name": table_name, "schema": schema}, message)
+            return describe_table
+            
+        elif tool_name == "get_schema_summary":
+            def get_schema_summary(schema: str = "public") -> str:
+                """
+                Get a complete summary of the database schema.
+                
+                Args:
+                    schema: Schema name (default: public)
+                """
+                return self._run_tool_sync("get_schema_summary", {"schema": schema}, message)
+            return get_schema_summary
+            
+        elif tool_name == "run_query":
+            def run_query(query: str) -> str:
+                """
+                Execute a read-only SQL SELECT query and return results.
+                
+                Args:
+                    query: SQL SELECT query to execute
+                """
+                return self._run_tool_sync("run_query", {"query": query}, message)
+            return run_query
+            
+        # Fallback for unknown tools
+        def tool_wrapper(**kwargs) -> str:
+            return self._run_tool_sync(tool_name, kwargs, message)
+        tool_wrapper.__name__ = tool_name
+        return tool_wrapper
+
 
 class DatabaseMCPClient(GenericMCPClient):
     """MCP Client for the Postgres server"""
@@ -91,12 +191,10 @@ class ChromaMCPClient(GenericMCPClient):
         )
 
     def get_available_tools(self) -> List[Dict[str, Any]]:
-        """Return the list of available MCP tools (standard Postgres set)"""
+        """Return the list of available MCP tools for Chroma"""
         return [
-            {"name": "list_tables", "description": "List all tables"},
-            {"name": "describe_table", "description": "Get table schema", "parameters": {"table_name": "string"}},
-            {"name": "get_schema_summary", "description": "Get full schema summary"},
-            {"name": "run_query", "description": "Run SELECT query", "parameters": {"query": "string"}}
+            {"name": "search_relevant_schema", "description": "Search schema parts", "parameters": {"query": "string", "n_results": "integer"}},
+            {"name": "search_business_knowledge", "description": "Search business rules", "parameters": {"query": "string", "n_results": "integer"}}
         ]
 
 
