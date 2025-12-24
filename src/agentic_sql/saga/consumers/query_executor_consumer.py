@@ -168,7 +168,6 @@ def process_query_execution(ch, method, properties, body):
         print(f"[SAGA STEP 4] ✗ Error: {str(e)}")
         
         try:
-            from agentic_sql.saga.messages import SagaErrorMessage
             error_message = SagaErrorMessage(
                 saga_id=message.saga_id,
                 user_id=message.user_id,
