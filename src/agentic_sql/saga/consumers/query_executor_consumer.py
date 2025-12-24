@@ -9,6 +9,7 @@ from agentic_sql.saga.messages import (
 from agentic_sql.saga.publisher import SagaPublisher
 from core.gemini_client import GeminiClient
 from core.mcp.client import DatabaseMCPClient
+from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_saga_error
 
 
 
@@ -81,43 +82,14 @@ def process_query_execution(ch, method, properties, body):
         if not success:
             print(f"[SAGA STEP 4] ✗ Agentic execution failed: {raw_results[:100]}...")
             
-            error_message = SagaErrorMessage(
-                saga_id=message.saga_id,
-                user_id=message.user_id,
-                account_id=message.account_id,
-                question=message.question,
+            store_saga_error(
+                message=message,
                 error_step="execute_query_agentic",
-                error_message=raw_results,
-                error_details={
-                    "duration_ms": duration_ms,
-                    "sql": message.generated_sql
-                }
-            )
-            
-            message.add_to_call_stack(
-                step_name="execute_query_agentic",
-                status="error",
+                error_msg=raw_results,
                 duration_ms=duration_ms,
-                error=raw_results,
-                reasoning=reasoning
+                reasoning=reasoning,
+                sql=message.generated_sql
             )
-            
-            from agentic_sql.saga.state_store import get_saga_state_store
-            saga_store = get_saga_state_store()
-            
-            error_dict = {
-                "success": False,
-                "saga_id": message.saga_id,
-                "error_step": "execute_query_agentic",
-                "error_message": raw_results,
-                "formatted_response": f"As your Senior Business Intelligence Consultant, I encountered an issue while retrieving data: {raw_results}",
-                "call_stack": [entry.to_dict() for entry in message.call_stack],
-                "status": "error"
-            }
-            saga_store.store_result(message.saga_id, error_dict, status="error")
-            
-            publisher = SagaPublisher()
-            publisher.publish_error(error_message)
             
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
@@ -153,10 +125,7 @@ def process_query_execution(ch, method, properties, body):
         publisher = SagaPublisher()
         publisher.publish_result_formatting(next_message)
         
-        # Update progress in store
-        from agentic_sql.saga.state_store import get_saga_state_store
-        saga_store = get_saga_state_store()
-        saga_store.update_result(message.saga_id, {
+        update_saga_state(message.saga_id, {
             "call_stack": [entry.to_dict() for entry in next_message.call_stack],
             "raw_results": raw_results
         })
@@ -167,41 +136,12 @@ def process_query_execution(ch, method, properties, body):
         duration_ms = (time.time() - start_time) * 1000
         print(f"[SAGA STEP 4] ✗ Error: {str(e)}")
         
-        try:
-            error_message = SagaErrorMessage(
-                saga_id=message.saga_id,
-                user_id=message.user_id,
-                account_id=message.account_id,
-                question=message.question,
-                error_step="execute_query_agentic",
-                error_message=str(e),
-                error_details={"duration_ms": duration_ms}
-            )
-            
-            message.add_to_call_stack(
-                step_name="execute_query_agentic",
-                status="error",
-                duration_ms=duration_ms,
-                error=str(e)
-            )
-            
-            from agentic_sql.saga.state_store import get_saga_state_store
-            saga_store = get_saga_state_store()
-            
-            error_dict = {
-                "success": False,
-                "saga_id": message.saga_id,
-                "error_step": "execute_query_agentic",
-                "error_message": str(e),
-                "formatted_response": "As your Senior Business Intelligence Consultant, I encountered an unexpected issue while retrieving data. Please try again.",
-                "call_stack": [entry.to_dict() for entry in message.call_stack],
-                "status": "error"
-            }
-            saga_store.store_result(message.saga_id, error_dict, status="error")
-            
-            SagaPublisher().publish_error(error_message)
-        except Exception:
-            pass
+        store_saga_error(
+            message=message,
+            error_step="execute_query_agentic",
+            error_msg=str(e),
+            duration_ms=duration_ms
+        )
         
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 

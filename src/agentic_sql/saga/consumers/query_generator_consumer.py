@@ -11,25 +11,7 @@ from agentic_sql.saga.publisher import SagaPublisher
 from core.gemini_client import GeminiClient
 from core.mcp.client import DatabaseMCPClient, ChromaMCPClient
 from account.models import User
-from core.database.session import get_db
-
-def sanitize_for_json(obj):
-    if isinstance(obj, dict):
-        return {k: sanitize_for_json(v) for k, v in obj.items()}
-    elif isinstance(obj, (list, tuple)):
-        return [sanitize_for_json(v) for v in obj]
-    elif hasattr(obj, "__dict__"):
-        # Handle custom objects or types with __dict__
-        return sanitize_for_json(obj.__dict__)
-    elif str(type(obj)).find("MapComposite") != -1:
-        # Specifically handle Gemini's MapComposite by converting it to a basic dict
-        try:
-            return {k: sanitize_for_json(v) for k, v in dict(obj).items()}
-        except:
-            return str(obj)
-    elif not isinstance(obj, (str, int, float, bool, type(None))):
-        return str(obj)
-    return obj
+from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_saga_error
 
 def extract_tables_from_sql(sql: str) -> List[str]:
     import re
@@ -197,30 +179,14 @@ def process_query_generation(ch, method, properties, body):
             duration_ms = (time.time() - start_time) * 1000
             print(f"[SAGA STEP 2+3] 🛑 Question is OUT OF SCOPE: {llm_reasoning[:100]}...")
             
-            # Update call stack
-            message.add_to_call_stack(
-                step_name="generate_query_agentic",
-                status="failed",
+            store_saga_error(
+                message=message,
+                error_step="generate_query_agentic",
+                error_msg=llm_reasoning,
                 duration_ms=duration_ms,
-                reason=llm_reasoning,
+                formatted_response=f"As your Senior Business Intelligence Consultant, I've determined that this inquiry falls outside our current business focus and database scope. {llm_reasoning}",
                 is_out_of_scope=True
             )
-            
-            # Store final result as "Irrelevant" and stop
-            from agentic_sql.saga.state_store import get_saga_state_store
-            saga_store = get_saga_state_store()
-            
-            result_dict = {
-                "success": False,
-                "saga_id": message.saga_id,
-                "question": message.question,
-                "error_message": "Out of DB Context",
-                "formatted_response": f"As your Senior Business Intelligence Consultant, I've determined that this inquiry falls outside our current business focus and database scope. {llm_reasoning}",
-                "call_stack": [entry.to_dict() for entry in message.call_stack],
-                "status": "error",
-                "is_irrelevant": True
-            }
-            saga_store.store_result(message.saga_id, result_dict, status="error")
             
             # Acknowledge and stop saga
             ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -247,9 +213,10 @@ def process_query_generation(ch, method, properties, body):
             step_name="generate_query_agentic",
             status="success",
             duration_ms=duration_ms,
-            llm_reasoning=llm_reasoning,
+            reasoning=llm_reasoning,
             prompt=llm_prompt,
             usage=llm_usage,
+            tools_used=next_message._current_tool_calls.copy(),
             interaction_history=sanitize_for_json(interaction_history)
         )
         
@@ -260,17 +227,10 @@ def process_query_generation(ch, method, properties, body):
         publisher = SagaPublisher()
         publisher.publish_query_execution(next_message)
         
-        # Update state store
-        from agentic_sql.saga.state_store import get_saga_state_store
-        saga_store = get_saga_state_store()
-        
-        # Prepare result for storage, sanitizing any complex types
-        result_update = {
+        update_saga_state(message.saga_id, {
             "call_stack": [entry.to_dict() for entry in next_message.call_stack],
             "generated_sql": generated_sql
-        }
-        
-        saga_store.update_result(message.saga_id, sanitize_for_json(result_update))
+        })
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
         
@@ -278,27 +238,12 @@ def process_query_generation(ch, method, properties, body):
         duration_ms = (time.time() - start_time) * 1000
         print(f"[SAGA STEP 3] ✗ Agentic Error: {str(e)}")
         
-        try:
-            from agentic_sql.saga.state_store import get_saga_state_store
-            saga_store = get_saga_state_store()
-            
-            error_data = {
-                "step_name": "generate_query_agentic",
-                "status": "error",
-                "duration_ms": duration_ms,
-                "error": str(e)
-            }
-            
-            if 'message' in locals():
-                message.add_to_call_stack(**error_data)
-                saga_store.update_result(message.saga_id, {
-                    "call_stack": [entry.to_dict() for entry in message.call_stack],
-                    "status": "error",
-                    "error_message": str(e),
-                    "formatted_response": "As your Senior Business Intelligence Consultant, I've encountered a challenge while trying to formulate a response to your question. This might be due to the complexity of the query or a transient technical issue. Please try rephrasing or submitting again."
-                })
-        except Exception as store_err:
-            print(f"[SAGA STEP 3] Failed to log error to store: {store_err}")
+        store_saga_error(
+            message=message,
+            error_step="generate_query_agentic",
+            error_msg=str(e),
+            duration_ms=duration_ms
+        )
 
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 

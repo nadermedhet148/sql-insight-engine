@@ -15,8 +15,8 @@ from agentic_sql.saga.messages import (
 )
 from agentic_sql.saga.publisher import SagaPublisher
 from agentic_sql.saga.state_store import get_saga_state_store
-from core.gemini_client import GeminiClient
 from core.mcp.client import DatabaseMCPClient, ChromaMCPClient
+from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_saga_error
 
 
 
@@ -73,7 +73,6 @@ def run_result_formatting_agentic(message: QueryExecutedMessage) -> tuple[str, s
             
         interaction_history = []
         try:
-            from agentic_sql.saga.consumers.query_generator_consumer import sanitize_for_json
             for msg in chat.history:
                 role = msg.role
                 parts = []
@@ -192,7 +191,7 @@ def process_result_formatting(ch, method, properties, body):
             "account_id": message.account_id
         }
         
-        saga_store.store_result(message.saga_id, result_dict)
+        update_saga_state(message.saga_id, result_dict, status="completed")
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
         
@@ -200,40 +199,12 @@ def process_result_formatting(ch, method, properties, body):
         duration_ms = (time.time() - start_time) * 1000
         print(f"[SAGA STEP 5] ✗ Error: {str(e)}")
         
-        try:
-            error_message = SagaErrorMessage(
-                saga_id=message.saga_id,
-                user_id=message.user_id,
-                account_id=message.account_id,
-                question=message.question,
-                error_step="format_result_agentic",
-                error_message=str(e),
-                error_details={"duration_ms": duration_ms}
-            )
-            
-            message.add_to_call_stack(
-                step_name="format_result_agentic",
-                status="error",
-                duration_ms=duration_ms,
-                error=str(e)
-            )
-            
-            error_dict = {
-                "success": False,
-                "saga_id": message.saga_id,
-                "error_step": "format_result_agentic",
-                "error_message": str(e),
-                "formatted_response": "As your Senior Business Intelligence Consultant, I successfully retrieved the data but encountered an issue while generating the final executive summary.",
-                "call_stack": [entry.to_dict() for entry in message.call_stack],
-                "user_id": message.user_id,
-                "account_id": message.account_id,
-                "status": "error"
-            }
-            saga_store.store_result(message.saga_id, error_dict, status="error")
-            
-            SagaPublisher().publish_error(error_message)
-        except Exception:
-            pass
+        store_saga_error(
+            message=message,
+            error_step="format_result_agentic",
+            error_msg=str(e),
+            duration_ms=duration_ms
+        )
         
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
