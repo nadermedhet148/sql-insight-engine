@@ -37,14 +37,12 @@ import account.models
 async def lifespan(app: FastAPI):
     # Startup: Start all Saga consumers
     from agentic_sql.saga.consumers import (
-        start_tables_consumer,
         start_query_generator_consumer,
         start_query_executor_consumer,
         start_result_formatter_consumer
     )
     
     consumers = [
-        ("Tables Check", start_tables_consumer),
         ("Query Generator", start_query_generator_consumer),
         ("Query Executor", start_query_executor_consumer),
         ("Result Formatter", start_result_formatter_consumer)

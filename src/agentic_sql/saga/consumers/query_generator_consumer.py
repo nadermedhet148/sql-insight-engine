@@ -4,14 +4,13 @@ import json
 import time
 from typing import List, Dict, Any
 from agentic_sql.saga.messages import (
-    TablesCheckedMessage, QueryGeneratedMessage,
+    QueryInitiatedMessage, QueryGeneratedMessage,
     SagaErrorMessage, message_from_dict
 )
 from agentic_sql.saga.publisher import SagaPublisher
 from core.gemini_client import GeminiClient
 from core.mcp.client import DatabaseMCPClient, ChromaMCPClient
 from account.models import User
-from core.database.session import get_db
 from core.database.session import get_db
 
 def sanitize_for_json(obj):
@@ -45,13 +44,13 @@ def extract_tables_from_sql(sql: str) -> List[str]:
             tables.append(table.lower())
     return list(set(tables))
 
-def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Dict[str, Any]) -> tuple[str, str, List[Dict]]:
+def run_agentic_sql_generation(message: QueryInitiatedMessage, db_config_dict: Dict[str, Any]) -> tuple[str, str, List[Dict]]:
     
     db_url = f"postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}"
     db_client = DatabaseMCPClient(db_url)
     chroma_client = ChromaMCPClient()
     
-    # Setup Gemini with tools using the shared helper
+    # Setup Gemini with tools
     tools = [
         db_client.get_gemini_tool("list_tables", message=message),
         db_client.get_gemini_tool("describe_table", message=message),
@@ -60,36 +59,26 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
     ]
     agent = GeminiClient(tools=tools)
     
-    business_context_str = ""
-    if hasattr(message, 'business_context') and message.business_context:
-        business_context_str = "\nBUSINESS CONTEXT:\n" + "\n".join([f"- {doc}" for doc in message.business_context])
-        
-    schema_context_str = ""
-    if hasattr(message, 'schema_context') and message.schema_context:
-        schema_context_str = "\nSCHEMA CONTEXT (POTENTIALLY RELEVANT FRAGMENTS):\n" + "\n".join([f"- {doc}" for doc in message.schema_context])
-
-    prompt = f"""You are an Agentic SQL Analyst. Your goal is to write a PostgreSQL query for: "{message.question}"
-    {business_context_str}
-    {schema_context_str}
+    prompt = f"""You are a Senior SQL Analyst and Gatekeeper. Your goal is to write a PostgreSQL query for: "{message.question}"
     
     CRITICAL RULES:
-    1. NEVER ASSUME table or column names. 
-    2. use `search_business_knowledge` to find the relevant data with the user query this will to get more context about the question
-    3. YOU MUST call `describe_table(table_name)` for EVERY table you include in your SQL. If you don't describe it, your answer will be rejected.
-    4. If the question requires data that isn't in any of the available tables, DO NOT invent tables or columns. State clearly that the data is missing.
-    5. Only use the tables listed below as "AVAILABLE REAL TABLES".
-    
-    AVAILABLE REAL TABLES: {", ".join(message.available_tables) if message.available_tables else "NONE"}
+    1. FIRST, use `list_tables` to see which tables exist.
+    2. Then, use `search_relevant_schema` and `search_business_knowledge` to identify relevant tables and understand business rules.
+    3. YOU MUST call `describe_table(table_name)` for EVERY table you include in your SQL to get the exact final column names.
+    4. If the question is NOT related to the available database schema or business scope, state clearly that it is "OUT_OF_SCOPE" and explain why.
+    5. If NO tables exist in the database, the answer is "OUT_OF_SCOPE".
+    6. Return a list of used table names.
     
     STRATEGY:
-    1. Use `search_relevant_schema` and `search_business_knowledge` to identify relevant tables and understand business rules (especially if SCHEMA CONTEXT is empty).
-    2. CALL describe_table for each relevant table to get the exact final column names.
-    3. If the question is not related to the available tables or business scope even after searching, state that it is "out of your business scope".
-    4. Write the final SQL query.
+    - Determine if the question is RELEVANT or OUT_OF_SCOPE.
+    - If RELEVANT, formulate the exact PostgreSQL query.
+    - If OUT_OF_SCOPE, provide a professional explanation.
     
-    Once you have enough information, reply with:
-    REASONING: [Your explanation]
-    SQL: [The final SQL query]
+    RESPONSE FORMAT (STRICT):
+    DECISION: [RELEVANT / OUT_OF_SCOPE]
+    REASONING: [Your explanation of the decision and the data found]
+    SQL: [The final SQL query if RELEVANT, otherwise NONE]
+    USED_TABLES: [Comma separated list of tables used in the SQL, or NONE]
     """
     
     chat = agent.model.start_chat(enable_automatic_function_calling=True)
@@ -99,10 +88,10 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
     
     interaction_history = []
     try:
-        for message in chat.history:
-            role = message.role
+        for m in chat.history:
+            role = m.role
             parts = []
-            for part in message.parts:
+            for part in m.parts:
                 if hasattr(part, "text") and part.text:
                     parts.append({"text": part.text})
                 elif hasattr(part, "function_call") and part.function_call:
@@ -125,34 +114,33 @@ def run_agentic_sql_generation(message: TablesCheckedMessage, db_config_dict: Di
                     })
             interaction_history.append({"role": role, "parts": parts})
     except Exception as e:
-        print(f"[SAGA STEP 3] Warning: Failed to serialize full interaction history: {e}")
+        print(f"[SAGA STEP 2/3] Warning: Failed to serialize full interaction history: {e}")
         interaction_history = [{"error": "Serialization failed", "details": str(e)}]
 
+    is_out_of_scope = "DECISION: OUT_OF_SCOPE" in full_text or "DECISION: IRRELEVANT" in full_text
+    
     reasoning = "N/A"
+    if "REASONING:" in full_text:
+        parts = full_text.split("REASONING:")
+        if len(parts) > 1:
+            reasoning = parts[1].split("SQL:")[0].strip()
+
     sql = ""
     if "SQL:" in full_text:
-        parts = full_text.split("SQL:")
-        sql = parts[1].strip()
-        reasoning = parts[0].replace("REASONING:", "").strip()
-    else:
-        sql = full_text.strip()
-        
+        sql_part = full_text.split("SQL:")[1].split("USED_TABLES:")[0].strip()
+        if sql_part.upper() != "NONE":
+            sql = sql_part
+            
     sql = sql.replace("```sql", "").replace("```", "").strip()
     if sql.endswith(";"): sql = sql[:-1]
 
-    # Detect if out of scope
-    is_out_of_scope = False
+    # Double check out of scope keywords if decision wasn't explicitly caught
     out_of_scope_keywords = ["out of your business scope", "out of you bussiness scope", "not related to the", "cannot answer", "missing data", "not related to any available tables", "out of scope"]
-    
-    if "SQL:" not in full_text:
-        # If no SQL provided, it's likely out of scope or failed
+    if not is_out_of_scope and not sql and any(kw in full_text.lower() for kw in out_of_scope_keywords):
         is_out_of_scope = True
-        reasoning = full_text.strip()
-    elif any(kw in full_text.lower() for kw in out_of_scope_keywords):
-        # Even if SQL is there, if it says it's out of scope, prioritize that
-        is_out_of_scope = True
+        if reasoning == "N/A": reasoning = full_text.strip()
     
-    # Capture usage metadata if available
+    # Capture usage metadata
     usage = {}
     if hasattr(response, "usage_metadata"):
         usage = {
@@ -178,9 +166,10 @@ def process_query_generation(ch, method, properties, body):
     
     try:
         data = json.loads(body)
-        message = message_from_dict(data, TablesCheckedMessage)
+        # Note: Now receiving QueryInitiatedMessage instead of TablesCheckedMessage
+        message = message_from_dict(data, QueryInitiatedMessage)
         
-        print(f"\n[SAGA STEP 3] Agentic Query Generation - Saga ID: {message.saga_id}")
+        print(f"\n[SAGA STEP 2+3] Merged Agentic Query Check & Generation - Saga ID: {message.saga_id}")
         
         # Get DB config
         db_config_dict = {}
@@ -206,7 +195,7 @@ def process_query_generation(ch, method, properties, body):
         
         if is_out_of_scope:
             duration_ms = (time.time() - start_time) * 1000
-            print(f"[SAGA STEP 3] 🛑 Question is out of business scope: {llm_reasoning[:100]}...")
+            print(f"[SAGA STEP 2+3] 🛑 Question is OUT OF SCOPE: {llm_reasoning[:100]}...")
             
             # Update call stack
             message.add_to_call_stack(
@@ -226,7 +215,7 @@ def process_query_generation(ch, method, properties, body):
                 "saga_id": message.saga_id,
                 "question": message.question,
                 "error_message": "Out of DB Context",
-                "formatted_response": "As your Senior Business Intelligence Consultant, I've determined that this inquiry falls outside our current business focus and database scope. I am unable to provide a response for this request.",
+                "formatted_response": f"As your Senior Business Intelligence Consultant, I've determined that this inquiry falls outside our current business focus and database scope. {llm_reasoning}",
                 "call_stack": [entry.to_dict() for entry in message.call_stack],
                 "status": "error",
                 "is_irrelevant": True
@@ -237,40 +226,6 @@ def process_query_generation(ch, method, properties, body):
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
         
-        used_tables = extract_tables_from_sql(generated_sql)
-        available_tables_lower = [t.lower() for t in message.available_tables]
-        
-        invalid_tables = [t for t in used_tables if t not in available_tables_lower]
-        if (invalid_tables and message.available_tables) or (not message.available_tables and used_tables):
-            duration_ms = (time.time() - start_time) * 1000
-            error_msg = "The inquiry seems to refer to data that is not available in our current scope."
-            
-            # Update call stack
-            message.add_to_call_stack(
-                step_name="generate_query_agentic",
-                status="failed",
-                duration_ms=duration_ms,
-                error="Hallucination/No tables check failed"
-            )
-            
-            # Store final result as "Irrelevant" and stop
-            from agentic_sql.saga.state_store import get_saga_state_store
-            saga_store = get_saga_state_store()
-            
-            result_dict = {
-                "success": False,
-                "saga_id": message.saga_id,
-                "question": message.question,
-                "error_message": "Out of DB Context",
-                "formatted_response": "As your Senior Business Intelligence Consultant, I've determined that this inquiry falls outside our current business focus and database scope. I am unable to provide a response for this request.",
-                "call_stack": [entry.to_dict() for entry in message.call_stack],
-                "status": "error",
-                "is_irrelevant": True
-            }
-            saga_store.store_result(message.saga_id, result_dict, status="error")
-            
-            return
-        
         duration_ms = (time.time() - start_time) * 1000
         
         next_message = QueryGeneratedMessage(
@@ -278,7 +233,6 @@ def process_query_generation(ch, method, properties, body):
             user_id=message.user_id,
             account_id=message.account_id,
             question=message.question,
-            schema_context=message.schema_context, # Keep for backward compatibility/logs
             generated_sql=generated_sql,
             db_config=db_config_dict,
             business_context=getattr(message, "business_context", []),
@@ -299,9 +253,9 @@ def process_query_generation(ch, method, properties, body):
             interaction_history=sanitize_for_json(interaction_history)
         )
         
-        print(f"[SAGA STEP 3] Reasoning: {llm_reasoning[:200]}...")
-        print(f"[SAGA STEP 3] Token Usage: {llm_usage}")
-        print(f"[SAGA STEP 3] ✓ SQL generated in {duration_ms:.2f}ms")
+        print(f"[SAGA STEP 2+3] Reasoning: {llm_reasoning[:200]}...")
+        print(f"[SAGA STEP 2+3] Token Usage: {llm_usage}")
+        print(f"[SAGA STEP 2+3] ✓ SQL generated in {duration_ms:.2f}ms")
         
         publisher = SagaPublisher()
         publisher.publish_query_execution(next_message)

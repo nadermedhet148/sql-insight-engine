@@ -83,8 +83,8 @@ class SagaPublisher:
     
     
     def publish_tables_check(self, message: SagaBaseMessage):
-        """Publish to tables check queue (Step 2)"""
-        self.publish(self.QUEUE_CHECK_TABLES, message)
+        """Publish to tables check (Now merged with query generation)"""
+        self.publish(self.QUEUE_GENERATE_QUERY, message)
     
     def publish_query_generation(self, message: SagaBaseMessage):
         """Publish to query generation queue (Step 3)"""
