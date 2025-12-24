@@ -46,12 +46,14 @@ class SagaStateStore:
         self._redis.setex(f"saga:{saga_id}", self._ttl_seconds, json.dumps(data))
         print(f"[STATE STORE] Marked saga {saga_id} as pending")
             
-    def update_result(self, saga_id: str, result_update: dict):
+    def update_result(self, saga_id: str, result_update: dict, status: Optional[str] = None):
         data_str = self._redis.get(f"saga:{saga_id}")
         if data_str:
             data = json.loads(data_str)
             data["result"].update(result_update)
             data["timestamp"] = datetime.utcnow().isoformat()
+            if status:
+                data["status"] = status
             # Save back with same TTL
             self._redis.setex(f"saga:{saga_id}", self._ttl_seconds, json.dumps(data))
             print(f"[STATE STORE] Updated progress for saga {saga_id}")

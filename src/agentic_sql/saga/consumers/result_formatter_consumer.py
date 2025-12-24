@@ -15,8 +15,9 @@ from agentic_sql.saga.messages import (
 )
 from agentic_sql.saga.publisher import SagaPublisher
 from agentic_sql.saga.state_store import get_saga_state_store
+from core.gemini_client import GeminiClient
 from core.mcp.client import DatabaseMCPClient, ChromaMCPClient
-from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_saga_error
+from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_saga_error, get_interaction_history
 
 
 
@@ -71,37 +72,7 @@ def run_result_formatting_agentic(message: QueryExecutedMessage) -> tuple[str, s
                 "total_token_count": response.usage_metadata.total_token_count
             }
             
-        interaction_history = []
-        try:
-            for msg in chat.history:
-                role = msg.role
-                parts = []
-                for part in msg.parts:
-                    if hasattr(part, "text") and part.text:
-                        parts.append({"text": part.text})
-                    elif hasattr(part, "function_call") and part.function_call:
-                        parts.append({
-                            "function_call": {
-                                "name": part.function_call.name,
-                                "args": dict(part.function_call.args)
-                            }
-                        })
-                    elif hasattr(part, "function_response") and part.function_response:
-                        resp = part.function_response.response
-                        if not isinstance(resp, (str, int, float, bool, list, dict, type(None))):
-                            resp = str(resp)
-                        
-                        parts.append({
-                            "function_response": {
-                                "name": part.function_response.name,
-                                "response": resp
-                            }
-                        })
-                interaction_history.append({"role": role, "parts": parts})
-            interaction_history = sanitize_for_json(interaction_history)
-        except Exception as e:
-            print(f"[SAGA STEP 5] Warning: Failed to capture interaction history: {e}")
-            interaction_history = []
+        interaction_history = get_interaction_history(chat)
             
         return formatted_response, text, usage, prompt, interaction_history
     except Exception as e:

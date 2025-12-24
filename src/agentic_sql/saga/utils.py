@@ -42,6 +42,52 @@ def update_saga_state(saga_id: str, update_data: Dict[str, Any], status: str = N
     else:
         saga_store.update_result(saga_id, sanitized_data)
 
+def get_interaction_history(chat) -> List[Dict[str, Any]]:
+    """
+    Safely extract and sanitize interaction history from a chat object.
+    Handles differences between SDK versions and internal types.
+    """
+    interaction_history = []
+    try:
+        # Chat object should have history property (from our wrapper or SDK)
+        history = getattr(chat, "history", [])
+        if not history and hasattr(chat, "_history"):
+            history = chat._history
+            
+        for m in history:
+            role = m.role
+            parts = []
+            for part in m.parts:
+                if hasattr(part, "text") and part.text:
+                    parts.append({"text": part.text})
+                elif hasattr(part, "function_call") and part.function_call:
+                    parts.append({
+                        "function_call": {
+                            "name": part.function_call.name,
+                            "args": dict(part.function_call.args)
+                        }
+                    })
+                elif hasattr(part, "function_response") and part.function_response:
+                    resp = getattr(part.function_response, "response", None)
+                    if resp is None and hasattr(part.function_response, "fields"):
+                         # Handle cases where response might be in fields
+                         resp = part.function_response.fields
+                         
+                    if not isinstance(resp, (str, int, float, bool, list, dict, type(None))):
+                        resp = str(resp)
+                    
+                    parts.append({
+                        "function_response": {
+                            "name": part.function_response.name,
+                            "response": resp
+                        }
+                    })
+            interaction_history.append({"role": role, "parts": parts})
+        return sanitize_for_json(interaction_history)
+    except Exception as e:
+        print(f"[SAGA UTIL] Warning: Failed to extract interaction history: {e}")
+        return []
+
 def store_saga_error(message: SagaBaseMessage, error_step: str, error_msg: str, 
                      duration_ms: float, formatted_response: str = None, **extra_metadata):
     """

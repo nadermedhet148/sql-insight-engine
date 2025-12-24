@@ -9,7 +9,7 @@ from agentic_sql.saga.messages import (
 from agentic_sql.saga.publisher import SagaPublisher
 from core.gemini_client import GeminiClient
 from core.mcp.client import DatabaseMCPClient
-from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_saga_error
+from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_saga_error, get_interaction_history
 
 
 
@@ -45,11 +45,12 @@ def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, 
         results = ""
         if "RESULTS:" in text:
             results = text.split("RESULTS:")[1].strip()
-        
-        return success, results, text # Return full text as reasoning
+            
+        interaction_history = get_interaction_history(chat)
+        return success, results, text, interaction_history # Return full text as reasoning
     except Exception as e:
         print(f"[SAGA STEP 4] Agentic query execution failed: {e}")
-        return False, str(e), "Execution error"
+        return False, str(e), "Execution error", []
 
 from core.infra.consumer import BaseConsumer
 
@@ -75,7 +76,7 @@ def process_query_execution(ch, method, properties, body):
         db_config_dict = message.db_config
         
         # Agentic query execution
-        success, raw_results, reasoning = run_query_agentic(message, db_config_dict)
+        success, raw_results, reasoning, interaction_history = run_query_agentic(message, db_config_dict)
         
         duration_ms = (time.time() - start_time) * 1000
         
@@ -118,7 +119,8 @@ def process_query_execution(ch, method, properties, body):
             duration_ms=duration_ms,
             result_lines=len(result_lines),
             sql=message.generated_sql,
-            reasoning=reasoning
+            reasoning=reasoning,
+            interaction_history=interaction_history
         )
         
         # Publish to next step

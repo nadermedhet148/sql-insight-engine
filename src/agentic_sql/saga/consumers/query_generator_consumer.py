@@ -11,7 +11,7 @@ from agentic_sql.saga.publisher import SagaPublisher
 from core.gemini_client import GeminiClient
 from core.mcp.client import DatabaseMCPClient, ChromaMCPClient
 from account.models import User
-from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_saga_error
+from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_saga_error, get_interaction_history
 
 def extract_tables_from_sql(sql: str) -> List[str]:
     import re
@@ -68,36 +68,7 @@ def run_agentic_sql_generation(message: QueryInitiatedMessage, db_config_dict: D
     
     full_text = response.text
     
-    interaction_history = []
-    try:
-        for m in chat.history:
-            role = m.role
-            parts = []
-            for part in m.parts:
-                if hasattr(part, "text") and part.text:
-                    parts.append({"text": part.text})
-                elif hasattr(part, "function_call") and part.function_call:
-                    parts.append({
-                        "function_call": {
-                            "name": part.function_call.name,
-                            "args": dict(part.function_call.args)
-                        }
-                    })
-                elif hasattr(part, "function_response") and part.function_response:
-                    resp = part.function_response.response
-                    if not isinstance(resp, (str, int, float, bool, list, dict, type(None))):
-                        resp = str(resp)
-                    
-                    parts.append({
-                        "function_response": {
-                            "name": part.function_response.name,
-                            "response": resp
-                        }
-                    })
-            interaction_history.append({"role": role, "parts": parts})
-    except Exception as e:
-        print(f"[SAGA STEP 2/3] Warning: Failed to serialize full interaction history: {e}")
-        interaction_history = [{"error": "Serialization failed", "details": str(e)}]
+    interaction_history = get_interaction_history(chat)
 
     is_out_of_scope = "DECISION: OUT_OF_SCOPE" in full_text or "DECISION: IRRELEVANT" in full_text
     
