@@ -14,7 +14,6 @@ from core.database.session import get_db
 
 
 def run_tables_check_agentic(message: QueryInitiatedMessage, db_config_dict: Dict[str, Any]) -> tuple[bool, str, List[str]]:
-    """Use Gemini with MCP tools to check relevance and identify available tables"""
     from core.mcp.client import DatabaseMCPClient, ChromaMCPClient
     
     db_url = f"postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}"
@@ -104,7 +103,6 @@ def process_tables_check(ch, method, properties, body):
                 "password": user.db_config.password,
             }
             
-            # Agentic relevance and table check
             is_relevant, reason, available_tables = run_tables_check_agentic(message, db_config_dict)
             
             duration_ms = (time.time() - start_time) * 1000

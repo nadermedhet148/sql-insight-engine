@@ -13,7 +13,6 @@ from core.mcp.client import DatabaseMCPClient
 
 
 def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, Any]) -> tuple[bool, str, str]:
-    """Use Gemini with run_query MCP tool to execute the query and handle potential errors"""
     db_url = f"postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}"
     db_client = DatabaseMCPClient(db_url)
     
@@ -103,7 +102,6 @@ def process_query_execution(ch, method, properties, body):
                 reasoning=reasoning
             )
             
-            # Update state store
             from agentic_sql.saga.state_store import get_saga_state_store
             saga_store = get_saga_state_store()
             
@@ -124,11 +122,9 @@ def process_query_execution(ch, method, properties, body):
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
         
-        # Success
         result_lines = raw_results.split('\n') if raw_results else []
         print(f"[SAGA STEP 4] ✓ Query executed successfully in {duration_ms:.2f}ms")
         
-        # Create next message
         next_message = QueryExecutedMessage(
             saga_id=message.saga_id,
             user_id=message.user_id,
