@@ -122,7 +122,7 @@ def process_query_generation(ch, method, properties, body):
         # Note: Now receiving QueryInitiatedMessage instead of TablesCheckedMessage
         message = message_from_dict(data, QueryInitiatedMessage)
         
-        print(f"\n[SAGA STEP 2] Merged Agentic Query Check & Generation - Saga ID: {message.saga_id}")
+        print(f"\n[SAGA STEP 1] Merged Agentic Query Check & Generation - Saga ID: {message.saga_id}")
         
         # Get DB config
         db_config_dict = {}
@@ -148,7 +148,7 @@ def process_query_generation(ch, method, properties, body):
         
         if is_out_of_scope:
             duration_ms = (time.time() - start_time) * 1000
-            print(f"[SAGA STEP 2] 🛑 Question is OUT OF SCOPE: {llm_reasoning[:100]}...")
+            print(f"[SAGA STEP 1] 🛑 Question is OUT OF SCOPE: {llm_reasoning[:100]}...")
             
             store_saga_error(
                 message=message,
@@ -171,6 +171,7 @@ def process_query_generation(ch, method, properties, body):
             account_id=message.account_id,
             question=message.question,
             generated_sql=generated_sql,
+            reasoning=llm_reasoning,
             db_config=db_config_dict,
             business_context=getattr(message, "business_context", []),
             business_documents_count=getattr(message, "business_documents_count", 0)
@@ -192,23 +193,24 @@ def process_query_generation(ch, method, properties, body):
             interaction_history=sanitize_for_json(interaction_history)
         )
         
-        print(f"[SAGA STEP 2] Reasoning: {llm_reasoning[:200]}...")
-        print(f"[SAGA STEP 2] Token Usage: {llm_usage}")
-        print(f"[SAGA STEP 2] ✓ SQL generated in {duration_ms:.2f}ms")
+        print(f"[SAGA STEP 1] Reasoning: {llm_reasoning[:200]}...")
+        print(f"[SAGA STEP 1] Token Usage: {llm_usage}")
+        print(f"[SAGA STEP 1] ✓ SQL generated in {duration_ms:.2f}ms")
         
         publisher = SagaPublisher()
         publisher.publish_query_execution(next_message)
         
         update_saga_state(message.saga_id, {
             "call_stack": [entry.to_dict() for entry in next_message.call_stack],
-            "generated_sql": generated_sql
+            "generated_sql": generated_sql,
+            "reasoning": llm_reasoning
         })
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
         
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
-        print(f"[SAGA STEP 2] ✗ Agentic Error: {str(e)}")
+        print(f"[SAGA STEP 1] ✗ Agentic Error: {str(e)}")
         
         store_saga_error(
             message=message,

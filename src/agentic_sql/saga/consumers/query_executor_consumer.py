@@ -27,12 +27,15 @@ def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, 
     {message.generated_sql}
     
     INSTRUCTIONS:
-    1. Call the `run_query` tool with the provided SQL.
-    2. If the query is successful, return the exact raw results.
-    3. If the query fails with an error, explain the error clearly.
+    1. Make sure the query have a limit of 10 rows max 
+    2. Make sure the query is valid , can be executed , not a DDL query and not a DML query 
+    3. Call the `run_query` tool with the provided SQL.
+    4. If the query is successful, return the exact raw results.
+    5. If the query fails with an error, explain the error clearly.
     
     RESPONSE FORMAT:
     STATUS: [SUCCESS/FAILED]
+    REASONING: [Your explanation of the decision and the data found]
     RESULTS: [The raw table results or the error message]
     """
     
@@ -42,12 +45,36 @@ def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, 
         text = response.text
         
         success = "STATUS: SUCCESS" in text
+        
+        # Robust extraction of RESULTS
         results = ""
         if "RESULTS:" in text:
             results = text.split("RESULTS:")[1].strip()
+        elif not success and not "STATUS:" in text:
+            # If no tags but failed, maybe the whole thing is the error
+            results = text.strip()
             
+        # Robust extraction of REASONING
+        reasoning = "N/A"
+        if "REASONING:" in text:
+            parts = text.split("REASONING:")
+            if len(parts) > 1:
+                # Extract between REASONING: and RESULTS: (if RESULTS exists)
+                if "RESULTS:" in parts[1]:
+                    reasoning = parts[1].split("RESULTS:")[0].strip()
+                else:
+                    reasoning = parts[1].strip()
+        
+        # Fallback for reasoning if it's still N/A
+        if reasoning == "N/A" and text:
+            if "STATUS:" in text:
+                # Use everything except the STATUS tag
+                reasoning = text.split("STATUS:")[0].strip() or text.strip()
+            else:
+                reasoning = text.strip()
+        
         interaction_history = get_interaction_history(chat)
-        return success, results, text, interaction_history
+        return success, results, reasoning, interaction_history
     except Exception as e:
         print(f"[SAGA STEP 4] Agentic query execution failed: {e}")
         return False, str(e), "Execution error", []
@@ -70,7 +97,7 @@ def process_query_execution(ch, method, properties, body):
         data = json.loads(body)
         message = message_from_dict(data, QueryGeneratedMessage)
         
-        print(f"\n[SAGA STEP 3] Query Execution (Agentic) - Saga ID: {message.saga_id}")
+        print(f"\n[SAGA STEP 2] Query Execution (Agentic) - Saga ID: {message.saga_id}")
         
         # db_config_dict for MCP client
         db_config_dict = message.db_config
@@ -81,8 +108,8 @@ def process_query_execution(ch, method, properties, body):
         duration_ms = (time.time() - start_time) * 1000
         
         if not success:
-            print(f"[SAGA STEP 3] ✗ Agentic execution failed: {raw_results[:100]}...")
-            print(f"[SAGA STEP 3] Reasoning: {reasoning}")
+            print(f"[SAGA STEP 2] ✗ Agentic execution failed: {raw_results[:100]}...")
+            print(f"[SAGA STEP 2] Reasoning: {reasoning}")
             
             store_saga_error(
                 message=message,
@@ -97,7 +124,7 @@ def process_query_execution(ch, method, properties, body):
             return
         
         result_lines = raw_results.split('\n') if raw_results else []
-        print(f"[SAGA STEP 3] ✓ Query executed successfully in {duration_ms:.2f}ms")
+        print(f"[SAGA STEP 2] ✓ Query executed successfully in {duration_ms:.2f}ms")
         
         next_message = QueryExecutedMessage(
             saga_id=message.saga_id,
@@ -106,6 +133,7 @@ def process_query_execution(ch, method, properties, body):
             question=message.question,
             generated_sql=message.generated_sql,
             raw_results=raw_results,
+            reasoning=reasoning,
             execution_success=True,
             execution_error=None
         )
@@ -131,14 +159,15 @@ def process_query_execution(ch, method, properties, body):
         
         update_saga_state(message.saga_id, {
             "call_stack": [entry.to_dict() for entry in next_message.call_stack],
-            "raw_results": raw_results
+            "raw_results": raw_results,
+            "reasoning": reasoning
         })
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
         
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
-        print(f"[SAGA STEP 3] ✗ Error: {str(e)}")
+        print(f"[SAGA STEP 2] ✗ Error: {str(e)}")
         
         store_saga_error(
             message=message,

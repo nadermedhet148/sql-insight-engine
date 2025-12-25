@@ -106,6 +106,7 @@ class TablesCheckedMessage(SagaBaseMessage):
 class QueryGeneratedMessage(SagaBaseMessage):
     schema_context: List[str] = field(default_factory=list)
     generated_sql: str = ""
+    reasoning: str = ""
     db_config: dict = field(default_factory=dict)
     business_context: List[str] = field(default_factory=list)
     business_documents_count: int = 0
@@ -114,6 +115,7 @@ class QueryGeneratedMessage(SagaBaseMessage):
         data = super().to_dict()
         data["schema_context"] = self.schema_context
         data["generated_sql"] = self.generated_sql
+        data["reasoning"] = self.reasoning
         data["db_config"] = self.db_config
         data["business_context"] = self.business_context
         data["business_documents_count"] = self.business_documents_count
@@ -124,6 +126,7 @@ class QueryGeneratedMessage(SagaBaseMessage):
 class QueryExecutedMessage(SagaBaseMessage):
     generated_sql: str = ""
     raw_results: str = ""
+    reasoning: str = ""
     execution_success: bool = True
     execution_error: Optional[str] = None
     
@@ -131,6 +134,7 @@ class QueryExecutedMessage(SagaBaseMessage):
         data = super().to_dict()
         data["generated_sql"] = self.generated_sql
         data["raw_results"] = self.raw_results
+        data["reasoning"] = self.reasoning
         data["execution_success"] = self.execution_success
         data["execution_error"] = self.execution_error
         return data
@@ -140,6 +144,7 @@ class QueryExecutedMessage(SagaBaseMessage):
 class ResultFormattedMessage(SagaBaseMessage):
     generated_sql: str = ""
     raw_results: str = ""
+    reasoning: str = ""
     formatted_response: str = ""
     success: bool = True
     error: Optional[str] = None
@@ -148,6 +153,7 @@ class ResultFormattedMessage(SagaBaseMessage):
         data = super().to_dict()
         data["generated_sql"] = self.generated_sql
         data["raw_results"] = self.raw_results
+        data["reasoning"] = self.reasoning
         data["formatted_response"] = self.formatted_response
         data["success"] = self.success
         data["error"] = self.error
