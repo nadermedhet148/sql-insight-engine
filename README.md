@@ -30,9 +30,9 @@ graph TD
     API --> RMQ[(RabbitMQ)]
     
     subgraph Saga_Workers [Saga Workers]
-        RMQ --> G[Step 2: Merged Check & Generator]
-        G --> E[Step 3: Query Executor]
-        E --> F[Step 4: Result Formatter]
+        RMQ --> G[Step 1: Merged Check & Generator]
+        G --> E[Step 2: Query Executor]
+        E --> F[Step 3: Result Formatter]
     end
     
     G -.->|Update State| Store
