@@ -54,7 +54,7 @@ def run_result_formatting_agentic(message: QueryExecutedMessage) -> tuple[str, s
     """
     
     try:
-        chat = agent.model.start_chat(enable_automatic_function_calling=True)
+        chat = agent.start_chat(enable_automatic_function_calling=True)
         response = chat.send_message(prompt)
         text = response.text
         

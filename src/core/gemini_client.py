@@ -8,31 +8,6 @@ load_dotenv()
 
 API_KEY = os.getenv("GEMINI_API_KEY")
 
-class ChatWrapper:
-    """Compatibility wrapper for the chat object to support send_message (old SDK) 
-    and preserve history access across different SDK versions."""
-    def __init__(self, chat_session):
-        self.chat_session = chat_session
-    
-    def send_message(self, message):
-        return self.chat_session.send_message(message)
-    
-    @property
-    def history(self):
-        # Handle different SDK versions/naming
-        if hasattr(self.chat_session, "history"):
-            return self.chat_session.history
-        if hasattr(self.chat_session, "_history"):
-            return self.chat_session._history
-        return []
-
-class ModelWrapper:
-    """Compatibility layer for code that still accesses .model.start_chat"""
-    def __init__(self, outer):
-        self.outer = outer
-    def start_chat(self, history=None, enable_automatic_function_calling=True):
-        return self.outer.start_chat(history=history, enable_automatic_function_calling=enable_automatic_function_calling)
-
 class GeminiClient:
     def __init__(self, model_name="gemini-2.0-flash", embedding_model="text-embedding-004", tools=None):
         if not API_KEY:
@@ -41,11 +16,9 @@ class GeminiClient:
         else:
             self.client = genai.Client(api_key=API_KEY)
         
-        # Strip "models/" prefix if present for the new SDK
         self.model_name = model_name.replace("models/", "")
         self.embedding_model = embedding_model.replace("models/", "")
         self.tools = tools
-        self.model = ModelWrapper(self)
 
     def generate_content(self, prompt: str, chat_history=None) -> Any:
         if not self.client:
@@ -76,8 +49,7 @@ class GeminiClient:
                 disable=not enable_automatic_function_calling
             )
         )
-        chat = self.client.chats.create(model=self.model_name, history=history, config=config)
-        return ChatWrapper(chat)
+        return self.client.chats.create(model=self.model_name, history=history, config=config)
 
     def get_embedding(self, text: str, task_type="RETRIEVAL_QUERY") -> list:
         if not self.client:

@@ -37,7 +37,7 @@ def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, 
     """
     
     try:
-        chat = agent.model.start_chat(enable_automatic_function_calling=True)
+        chat = agent.start_chat(enable_automatic_function_calling=True)
         response = chat.send_message(prompt)
         text = response.text
         

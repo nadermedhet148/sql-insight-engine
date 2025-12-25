@@ -63,7 +63,7 @@ def run_agentic_sql_generation(message: QueryInitiatedMessage, db_config_dict: D
     USED_TABLES: [Comma separated list of tables used in the SQL, or NONE]
     """
     
-    chat = agent.model.start_chat(enable_automatic_function_calling=True)
+    chat = agent.start_chat(enable_automatic_function_calling=True)
     response = chat.send_message(prompt)
     
     full_text = response.text
