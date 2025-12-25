@@ -150,6 +150,7 @@ def process_query_execution(ch, method, properties, body):
             sql=message.generated_sql,
             reasoning=reasoning,
             response=raw_results,
+            tools_used=sanitize_for_json(next_message._current_tool_calls.copy()),
             interaction_history=interaction_history
         )
         

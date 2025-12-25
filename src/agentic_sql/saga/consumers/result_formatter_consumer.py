@@ -135,6 +135,7 @@ def process_result_formatting(ch, method, properties, body):
             prompt=llm_prompt,
             response=formatted_response,
             usage=llm_usage,
+            tools_used=sanitize_for_json(final_message._current_tool_calls.copy()),
             interaction_history=interaction_history
         )
         

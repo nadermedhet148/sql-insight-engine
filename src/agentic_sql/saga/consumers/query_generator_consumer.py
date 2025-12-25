@@ -189,6 +189,7 @@ def process_query_generation(ch, method, properties, body):
             prompt=llm_prompt,
             response=llm_reasoning,
             usage=llm_usage,
+            tools_used=sanitize_for_json(next_message._current_tool_calls.copy()),
             interaction_history=interaction_history
         )
         
