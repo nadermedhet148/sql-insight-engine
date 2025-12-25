@@ -98,15 +98,15 @@ def process_result_formatting(ch, method, properties, body):
         data = json.loads(body)
         message = message_from_dict(data, QueryExecutedMessage)
         
-        print(f"\n[SAGA STEP 5] Result Formatting (Agentic) - Saga ID: {message.saga_id}")
+        print(f"\n[SAGA STEP 4] Result Formatting (Agentic) - Saga ID: {message.saga_id}")
         
         # Agentic formatting
         formatted_response, reasoning, llm_usage, llm_prompt, interaction_history = run_result_formatting_agentic(message)
         
         duration_ms = (time.time() - start_time) * 1000
         
-        print(f"[SAGA STEP 5] Step Token Usage: {llm_usage}")
-        print(f"[SAGA STEP 5] ✓ Results formatted successfully in {duration_ms:.2f}ms")
+        print(f"[SAGA STEP 4] Step Token Usage: {llm_usage}")
+        print(f"[SAGA STEP 4] ✓ Results formatted successfully in {duration_ms:.2f}ms")
         
         # Create final result message
         final_message = ResultFormattedMessage(
@@ -129,6 +129,7 @@ def process_result_formatting(ch, method, properties, body):
             response_length=len(formatted_response),
             reasoning=reasoning,
             prompt=llm_prompt,
+            response=formatted_response,
             usage=llm_usage,
             interaction_history=interaction_history
         )
@@ -144,9 +145,9 @@ def process_result_formatting(ch, method, properties, body):
             elif entry.metadata and "total_token_count" in entry.metadata: # Legacy format check
                 total_tokens += entry.metadata["total_token_count"]
         
-        print(f"[SAGA STEP 5] 🎉 SAGA COMPLETED SUCCESSFULLY!")
-        print(f"[SAGA STEP 5] Total duration: {total_duration:.2f}ms")
-        print(f"[SAGA STEP 5] Total tokens used: {total_tokens}")
+        print(f"[SAGA STEP 4] 🎉 SAGA COMPLETED SUCCESSFULLY!")
+        print(f"[SAGA STEP 4] Total duration: {total_duration:.2f}ms")
+        print(f"[SAGA STEP 4] Total tokens used: {total_tokens}")
         
         result_dict = {
             "success": True,
@@ -168,7 +169,7 @@ def process_result_formatting(ch, method, properties, body):
         
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
-        print(f"[SAGA STEP 5] ✗ Error: {str(e)}")
+        print(f"[SAGA STEP 4] ✗ Error: {str(e)}")
         
         store_saga_error(
             message=message,

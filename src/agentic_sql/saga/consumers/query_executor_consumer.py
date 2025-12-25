@@ -70,7 +70,7 @@ def process_query_execution(ch, method, properties, body):
         data = json.loads(body)
         message = message_from_dict(data, QueryGeneratedMessage)
         
-        print(f"\n[SAGA STEP 4] Query Execution (Agentic) - Saga ID: {message.saga_id}")
+        print(f"\n[SAGA STEP 3] Query Execution (Agentic) - Saga ID: {message.saga_id}")
         
         # db_config_dict for MCP client
         db_config_dict = message.db_config
@@ -81,7 +81,8 @@ def process_query_execution(ch, method, properties, body):
         duration_ms = (time.time() - start_time) * 1000
         
         if not success:
-            print(f"[SAGA STEP 4] ✗ Agentic execution failed: {raw_results[:100]}...")
+            print(f"[SAGA STEP 3] ✗ Agentic execution failed: {raw_results[:100]}...")
+            print(f"[SAGA STEP 3] Reasoning: {reasoning}")
             
             store_saga_error(
                 message=message,
@@ -96,7 +97,7 @@ def process_query_execution(ch, method, properties, body):
             return
         
         result_lines = raw_results.split('\n') if raw_results else []
-        print(f"[SAGA STEP 4] ✓ Query executed successfully in {duration_ms:.2f}ms")
+        print(f"[SAGA STEP 3] ✓ Query executed successfully in {duration_ms:.2f}ms")
         
         next_message = QueryExecutedMessage(
             saga_id=message.saga_id,
@@ -120,6 +121,7 @@ def process_query_execution(ch, method, properties, body):
             result_lines=len(result_lines),
             sql=message.generated_sql,
             reasoning=reasoning,
+            response=raw_results,
             interaction_history=interaction_history
         )
         
@@ -136,7 +138,7 @@ def process_query_execution(ch, method, properties, body):
         
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
-        print(f"[SAGA STEP 4] ✗ Error: {str(e)}")
+        print(f"[SAGA STEP 3] ✗ Error: {str(e)}")
         
         store_saga_error(
             message=message,

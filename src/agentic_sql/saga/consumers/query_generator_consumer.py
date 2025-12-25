@@ -122,7 +122,7 @@ def process_query_generation(ch, method, properties, body):
         # Note: Now receiving QueryInitiatedMessage instead of TablesCheckedMessage
         message = message_from_dict(data, QueryInitiatedMessage)
         
-        print(f"\n[SAGA STEP 2+3] Merged Agentic Query Check & Generation - Saga ID: {message.saga_id}")
+        print(f"\n[SAGA STEP 2] Merged Agentic Query Check & Generation - Saga ID: {message.saga_id}")
         
         # Get DB config
         db_config_dict = {}
@@ -148,7 +148,7 @@ def process_query_generation(ch, method, properties, body):
         
         if is_out_of_scope:
             duration_ms = (time.time() - start_time) * 1000
-            print(f"[SAGA STEP 2+3] 🛑 Question is OUT OF SCOPE: {llm_reasoning[:100]}...")
+            print(f"[SAGA STEP 2] 🛑 Question is OUT OF SCOPE: {llm_reasoning[:100]}...")
             
             store_saga_error(
                 message=message,
@@ -186,14 +186,15 @@ def process_query_generation(ch, method, properties, body):
             duration_ms=duration_ms,
             reasoning=llm_reasoning,
             prompt=llm_prompt,
+            response=llm_reasoning,
             usage=llm_usage,
             tools_used=next_message._current_tool_calls.copy(),
             interaction_history=sanitize_for_json(interaction_history)
         )
         
-        print(f"[SAGA STEP 2+3] Reasoning: {llm_reasoning[:200]}...")
-        print(f"[SAGA STEP 2+3] Token Usage: {llm_usage}")
-        print(f"[SAGA STEP 2+3] ✓ SQL generated in {duration_ms:.2f}ms")
+        print(f"[SAGA STEP 2] Reasoning: {llm_reasoning[:200]}...")
+        print(f"[SAGA STEP 2] Token Usage: {llm_usage}")
+        print(f"[SAGA STEP 2] ✓ SQL generated in {duration_ms:.2f}ms")
         
         publisher = SagaPublisher()
         publisher.publish_query_execution(next_message)
@@ -207,7 +208,7 @@ def process_query_generation(ch, method, properties, body):
         
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
-        print(f"[SAGA STEP 3] ✗ Agentic Error: {str(e)}")
+        print(f"[SAGA STEP 2] ✗ Agentic Error: {str(e)}")
         
         store_saga_error(
             message=message,
