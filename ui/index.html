@@ -245,7 +245,19 @@
                         </svg>
                         <h3>Answer</h3>
                     </div>
-                    <div id="sagaReasoning" class="reasoning-summary-container" style="display: none;"></div>
+                    <div id="sagaReasoning" class="reasoning-summary-container" style="display: none;">
+                        <div class="metrics-bar">
+                            <div class="metric">
+                                <span class="metric-label">Total Time:</span>
+                                <span id="totalTime" class="metric-value">0ms</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-label">Tokens Used:</span>
+                                <span id="totalTokens" class="metric-value">0</span>
+                            </div>
+                        </div>
+                        <div id="sagaReasoningContent"></div>
+                    </div>
                     <div id="formattedResponse" class="response-content"></div>
                 </div>
 

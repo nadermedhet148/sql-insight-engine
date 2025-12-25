@@ -496,17 +496,19 @@ function updateLoadingProgress(callStack) {
 function renderCallStack(callStack) {
     if (!callStack || callStack.length === 0) return '<div class="text-muted">No processing data available</div>';
 
-    return callStack.map((step, index) => {
-        const stepTitle = step.step_name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-        const badgeClass = step.status === 'success' ? 'badge-success' : (step.status === 'error' || step.status === 'failed' ? 'badge-error' : 'badge-info');
-        const duration = step.duration_ms ? `${step.duration_ms.toFixed(0)}ms` : '';
+    return callStack
+        .filter(step => step.status !== 'pending' && step.step_name !== 'init') // Filter empty/pending steps
+        .map((step, index) => {
+            const stepTitle = step.step_name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+            const badgeClass = step.status === 'success' ? 'badge-success' : (step.status === 'error' || step.status === 'failed' ? 'badge-error' : 'badge-info');
+            const duration = step.duration_ms ? `${step.duration_ms.toFixed(0)}ms` : '';
 
-        let metadataHtml = '';
-        if (step.metadata) {
-            const m = step.metadata;
+            let metadataHtml = '';
+            if (step.metadata) {
+                const m = step.metadata;
 
-            if (m.prompt) {
-                metadataHtml += `
+                if (m.prompt) {
+                    metadataHtml += `
                     <div class="meta-section">
                         <div class="meta-label">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
@@ -514,11 +516,11 @@ function renderCallStack(callStack) {
                         </div>
                         <div class="meta-content">${m.prompt}</div>
                     </div>`;
-            }
+                }
 
-            if (m.llm_reasoning || m.reasoning) {
-                const reasoning = m.llm_reasoning || m.reasoning;
-                metadataHtml += `
+                if (m.llm_reasoning || m.reasoning) {
+                    const reasoning = m.llm_reasoning || m.reasoning;
+                    metadataHtml += `
                     <div class="meta-section">
                         <div class="meta-label">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
@@ -526,10 +528,10 @@ function renderCallStack(callStack) {
                         </div>
                         <div class="meta-content meta-content-rich">${reasoning}</div>
                     </div>`;
-            }
+                }
 
-            if (m.tools_used && m.tools_used.length > 0) {
-                metadataHtml += `
+                if (m.tools_used && m.tools_used.length > 0) {
+                    metadataHtml += `
                     <div class="meta-section">
                         <div class="meta-label">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
@@ -551,10 +553,10 @@ function renderCallStack(callStack) {
                             `).join('')}
                         </div>
                     </div>`;
-            }
+                }
 
-            if (m.available_tables) {
-                metadataHtml += `
+                if (m.available_tables) {
+                    metadataHtml += `
                     <div class="meta-section">
                         <div class="meta-label">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"></path><path d="M21 9H3"></path><path d="M21 15H3"></path><path d="M9 3v18"></path><path d="M15 3v18"></path></svg>
@@ -562,10 +564,10 @@ function renderCallStack(callStack) {
                         </div>
                         <div class="meta-content">Found Tables: ${m.available_tables.join(', ')}</div>
                     </div>`;
-            }
+                }
 
-            if (m.sql) {
-                metadataHtml += `
+                if (m.sql) {
+                    metadataHtml += `
                     <div class="meta-section">
                         <div class="meta-label">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
@@ -573,10 +575,10 @@ function renderCallStack(callStack) {
                         </div>
                         <div class="meta-content">${m.sql}</div>
                     </div>`;
-            }
+                }
 
-            if (m.usage) {
-                metadataHtml += `
+                if (m.usage) {
+                    metadataHtml += `
                     <div class="meta-section">
                         <div class="meta-label">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
@@ -584,18 +586,18 @@ function renderCallStack(callStack) {
                         </div>
                         <div class="meta-content">Prompt: ${m.usage.prompt_token_count} | Response: ${m.usage.candidates_token_count} | Total: ${m.usage.total_token_count}</div>
                     </div>`;
-            }
+                }
 
-            if (m.reason) {
-                metadataHtml += `
+                if (m.reason) {
+                    metadataHtml += `
                     <div class="meta-section">
                         <div class="meta-label">Status Details</div>
                         <div class="meta-content">${m.reason}</div>
                     </div>`;
+                }
             }
-        }
 
-        return `
+            return `
             <div class="stack-item ${index === callStack.length - 1 ? 'open' : ''}" id="stack-item-${index}">
                 <div class="stack-header" onclick="toggleStackItem(${index})">
                     <div class="stack-icon">${index + 1}</div>
@@ -616,7 +618,7 @@ function renderCallStack(callStack) {
                 </div>
             </div>
         `;
-    }).join('');
+        }).join('');
 }
 
 function toggleStackItem(index) {
@@ -633,10 +635,17 @@ function displayResults(data) {
     const sqlTab = document.querySelector('.tab[data-tab="sql"]');
     const rawTab = document.querySelector('.tab[data-tab="raw"]');
 
+    // Display total metrics
+    const totalTimeEl = document.getElementById('totalTime');
+    const totalTokensEl = document.getElementById('totalTokens');
+    if (totalTimeEl) totalTimeEl.textContent = data.total_duration_ms ? `${data.total_duration_ms.toFixed(0)}ms` : '0ms';
+    if (totalTokensEl) totalTokensEl.textContent = data.total_tokens || '0';
+
     // Display reasoning if available
     const reasoningArea = document.getElementById('sagaReasoning');
-    if (data.reasoning && reasoningArea) {
-        reasoningArea.innerHTML = `
+    const reasoningContent = document.getElementById('sagaReasoningContent');
+    if (data.reasoning && reasoningContent) {
+        reasoningContent.innerHTML = `
             <div class="reasoning-summary">
                 <div class="reasoning-badge">AI INSIGHT</div>
                 <div class="reasoning-text">${data.reasoning}</div>
@@ -644,7 +653,9 @@ function displayResults(data) {
         `;
         reasoningArea.style.display = 'block';
     } else if (reasoningArea) {
-        reasoningArea.style.display = 'none';
+        // Still show area if metrics are available, but hide the content part
+        reasoningArea.style.display = 'block';
+        if (reasoningContent) reasoningContent.innerHTML = '';
     }
 
     // Display formatted response

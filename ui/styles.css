@@ -743,6 +743,32 @@ body {
     margin-bottom: 2rem;
 }
 
+.metrics-bar {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.metric {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.metric-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.metric-value {
+    font-size: 0.9rem;
+    color: var(--primary-light);
+    font-weight: 700;
+}
+
 .reasoning-summary {
     background: rgba(99, 102, 241, 0.1);
     border-left: 4px solid var(--primary);
