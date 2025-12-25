@@ -13,7 +13,7 @@ from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_s
 
 
 
-def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, Any]) -> tuple[bool, str, str]:
+def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, Any]) -> tuple[bool, str, str, List[Dict[str, Any]]]:
     db_url = f"postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}"
     db_client = DatabaseMCPClient(db_url)
     
@@ -47,7 +47,7 @@ def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, 
             results = text.split("RESULTS:")[1].strip()
             
         interaction_history = get_interaction_history(chat)
-        return success, results, text, interaction_history # Return full text as reasoning
+        return success, results, text, interaction_history
     except Exception as e:
         print(f"[SAGA STEP 4] Agentic query execution failed: {e}")
         return False, str(e), "Execution error", []

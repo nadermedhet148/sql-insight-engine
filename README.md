@@ -30,8 +30,8 @@ graph TD
     API --> RMQ[(RabbitMQ: Exchange)]
     
     subgraph Saga Workers
-        RMQ --> T[Tables Check Worker]
-        T --> G[Query Generator Worker]
+    subgraph Saga Workers
+        RMQ --> G[Query Check & Generator Worker]
         G --> E[Query Executor Worker]
         E --> F[Result Formatter Worker]
     end
@@ -51,21 +51,20 @@ graph TD
 sequenceDiagram
     participant API as FastAPI
     participant RMQ as RabbitMQ
-    participant T as Step 1: Tables Check
-    participant G as Step 2: Query Generator
-    participant E as Step 3: Query Executor
-    participant F as Step 4: Result Formatter
+    participant G as Step 1: Merged Check & Generator
+    participant E as Step 2: Query Executor
+    participant F as Step 3: Result Formatter
     
-    API->>RMQ: Publish Initial Message
-    RMQ->>T: Consume Base Message
-    T->>RMQ: Publish TablesCheckedMessage
-    RMQ->>G: Consume TablesCheckedMessage
-    G->>G: Agentic Loop (Tool Calls)
+    API->>RMQ: Publish Initial Message (QueryInitiatedMessage)
+    RMQ->>G: Consume QueryInitiatedMessage
+    G->>G: Agentic Loop (Check relevance + Generate SQL)
     G->>RMQ: Publish QueryGeneratedMessage
     RMQ->>E: Consume QueryGeneratedMessage
+    E->>E: Execute SQL via MCP
     E->>RMQ: Publish QueryExecutedMessage
     RMQ->>F: Consume QueryExecutedMessage
-    F->>F: Final Output Formatting
+    F->>F: Agentic Loop (Final Summary)
+    F->>API: Done (State Store Updated)
 ```
 
 ---
