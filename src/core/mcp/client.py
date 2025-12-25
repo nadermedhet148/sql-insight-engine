@@ -54,6 +54,7 @@ class GenericMCPClient:
                         print(f"[MCP] Tool Error: {content_text}")
 
                     if message and hasattr(message, "track_tool_call"):
+                        print(f"[MCP] Tracking tool call {tool_name} on message {type(message).__name__}")
                         message.track_tool_call(
                             tool=tool_name,
                             args=filtered_args,

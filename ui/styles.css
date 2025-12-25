@@ -739,6 +739,39 @@ body {
     border: 1px solid rgba(99, 102, 241, 0.2);
 }
 
+.reasoning-summary-container {
+    margin-bottom: 2rem;
+}
+
+.reasoning-summary {
+    background: rgba(99, 102, 241, 0.1);
+    border-left: 4px solid var(--primary);
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    padding: 1.25rem 1.5rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.reasoning-badge {
+    position: absolute;
+    top: 0;
+    right: 0;
+    background: var(--primary);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 800;
+    padding: 2px 8px;
+    border-radius: 0 0 0 8px;
+    letter-spacing: 0.05em;
+}
+
+.reasoning-text {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    font-style: italic;
+    line-height: 1.5;
+}
+
 .card-header {
     display: flex;
     align-items: center;

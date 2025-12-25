@@ -123,6 +123,9 @@ def process_result_formatting(ch, method, properties, body):
         )
         
         final_message.call_stack = message.call_stack.copy()
+        final_message._current_tool_calls = message._current_tool_calls.copy()
+        message._current_tool_calls = []
+        
         final_message.add_to_call_stack(
             step_name="format_result_agentic",
             status="success",

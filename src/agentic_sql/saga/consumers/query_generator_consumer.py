@@ -189,8 +189,7 @@ def process_query_generation(ch, method, properties, body):
             prompt=llm_prompt,
             response=llm_reasoning,
             usage=llm_usage,
-            tools_used=next_message._current_tool_calls.copy(),
-            interaction_history=sanitize_for_json(interaction_history)
+            interaction_history=interaction_history
         )
         
         print(f"[SAGA STEP 1] Reasoning: {llm_reasoning[:200]}...")

@@ -100,6 +100,11 @@ def store_saga_error(message: SagaBaseMessage, error_step: str, error_msg: str,
     saga_store = get_saga_state_store()
     
     # 1. Update call stack
+    # Explicitly include any tool calls from the current message if not in extra_metadata
+    if hasattr(message, "_current_tool_calls") and message._current_tool_calls and "tools_used" not in extra_metadata:
+        extra_metadata["tools_used"] = message._current_tool_calls.copy()
+        message._current_tool_calls = []
+
     message.add_to_call_stack(
         step_name=error_step,
         status="error",

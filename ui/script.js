@@ -466,11 +466,13 @@ function updateLoadingProgress(callStack) {
     const stepMapping = {
         'check_knowledge_base': 'step1Load',
         'check_tables': 'step1Load',
-        'relevance_check': 'step1Load', // Relevance check is part of step 1/2 transition
+        'relevance_check': 'step1Load',
         'generate_query': 'step2Load',
         'generate_query_agentic': 'step2Load',
         'execute_query': 'step3Load',
-        'format_result': 'step4Load'
+        'execute_query_agentic': 'step3Load',
+        'format_result': 'step4Load',
+        'format_result_agentic': 'step4Load'
     };
 
     callStack.forEach(step => {
@@ -514,14 +516,15 @@ function renderCallStack(callStack) {
                     </div>`;
             }
 
-            if (m.llm_reasoning) {
+            if (m.llm_reasoning || m.reasoning) {
+                const reasoning = m.llm_reasoning || m.reasoning;
                 metadataHtml += `
                     <div class="meta-section">
                         <div class="meta-label">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
                             AI Reasoning
                         </div>
-                        <div class="meta-content meta-content-rich">${m.llm_reasoning}</div>
+                        <div class="meta-content meta-content-rich">${reasoning}</div>
                     </div>`;
             }
 
@@ -629,6 +632,20 @@ function displayResults(data) {
     const reasoningTab = document.querySelector('.tab[data-tab="reasoning"]');
     const sqlTab = document.querySelector('.tab[data-tab="sql"]');
     const rawTab = document.querySelector('.tab[data-tab="raw"]');
+
+    // Display reasoning if available
+    const reasoningArea = document.getElementById('sagaReasoning');
+    if (data.reasoning && reasoningArea) {
+        reasoningArea.innerHTML = `
+            <div class="reasoning-summary">
+                <div class="reasoning-badge">AI INSIGHT</div>
+                <div class="reasoning-text">${data.reasoning}</div>
+            </div>
+        `;
+        reasoningArea.style.display = 'block';
+    } else if (reasoningArea) {
+        reasoningArea.style.display = 'none';
+    }
 
     // Display formatted response
     document.getElementById('formattedResponse').innerHTML = formatMarkdown(data.formatted_response);

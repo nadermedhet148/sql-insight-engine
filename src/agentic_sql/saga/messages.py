@@ -50,17 +50,22 @@ class SagaBaseMessage:
 
     def add_to_call_stack(self, step_name: str, status: str = "success", 
                           duration_ms: Optional[float] = None, **metadata):
+        from agentic_sql.saga.utils import sanitize_for_json
+        
         # Auto-include any tracked tool calls if not explicitly provided
         if self._current_tool_calls and "tools_used" not in metadata:
             metadata["tools_used"] = self._current_tool_calls.copy()
             self._current_tool_calls = []
+
+        # Sanitize all metadata before storing
+        sanitized_metadata = sanitize_for_json(metadata)
 
         entry = CallStackEntry(
             step_name=step_name,
             timestamp=datetime.utcnow().isoformat(),
             duration_ms=duration_ms,
             status=status,
-            metadata=metadata
+            metadata=sanitized_metadata
         )
         self.call_stack.append(entry)
     
