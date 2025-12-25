@@ -26,45 +26,69 @@ The system uses a **Saga Pattern** with RabbitMQ to manage long-running agentic 
 ```mermaid
 graph TD
     User([User Question]) --> API[FastAPI Entrypoint]
-    API --> Store[State Store: Pending]
-    API --> RMQ[(RabbitMQ: Exchange)]
+    API --> Store[(Redis State Store)]
+    API --> RMQ[(RabbitMQ)]
     
-    subgraph Saga Workers
-    subgraph Saga Workers
-        RMQ --> G[Query Check & Generator Worker]
-        G --> E[Query Executor Worker]
-        E --> F[Result Formatter Worker]
+    subgraph Saga_Workers [Saga Workers]
+        RMQ --> G[Step 2: Merged Check & Generator]
+        G --> E[Step 3: Query Executor]
+        E --> F[Step 4: Result Formatter]
     end
     
-    subgraph Agentic Intelligence
-        G <--> Gemini{Agentic SQL Analyst}
+    G -.->|Update State| Store
+    E -.->|Update State| Store
+    F -.->|Set Complete| Store
+    
+    subgraph Agentic_Intelligence [Agentic Intelligence]
+        G <--> Gemini{Google Gemini}
+        E <--> Gemini
+        F <--> Gemini
         Gemini <--> MCP_DB[Database MCP Tool]
         Gemini <--> MCP_KB[Knowledge Base MCP Tool]
     end
     
-    F --> Store_Complete[State Store: Completed]
-    Store_Complete --> User_Res([Final Formatted Insight])
+    API -.->|Poll Status| Store
+    Store -.->|Final Insight| User
 ```
 
 ### Saga Pattern Workflow
 ```mermaid
 sequenceDiagram
+    participant User as User/Frontend
     participant API as FastAPI
+    participant SS as Redis (State Store)
     participant RMQ as RabbitMQ
-    participant G as Step 1: Merged Check & Generator
-    participant E as Step 2: Query Executor
-    participant F as Step 3: Result Formatter
+    participant G as Step 2: Merged Check & Generator
+    participant E as Step 3: Query Executor
+    participant F as Step 4: Result Formatter
     
-    API->>RMQ: Publish Initial Message (QueryInitiatedMessage)
-    RMQ->>G: Consume QueryInitiatedMessage
-    G->>G: Agentic Loop (Check relevance + Generate SQL)
+    User->>API: POST /query/async
+    API->>SS: Mark Saga as Pending
+    API->>RMQ: Publish QueryInitiatedMessage
+    API-->>User: Return saga_id
+    
+    Note over G,F: Asynchronous Processing
+    
+    RMQ->>G: Consume Message
+    G->>G: Agentic Loop (Discovery + Generate SQL)
+    G->>SS: Update State (SQL + Call Stack)
     G->>RMQ: Publish QueryGeneratedMessage
-    RMQ->>E: Consume QueryGeneratedMessage
-    E->>E: Execute SQL via MCP
+    
+    RMQ->>E: Consume Message
+    E->>E: Execute SQL via MCP Tool
+    E->>SS: Update State (Raw Results)
     E->>RMQ: Publish QueryExecutedMessage
-    RMQ->>F: Consume QueryExecutedMessage
-    F->>F: Agentic Loop (Final Summary)
-    F->>API: Done (State Store Updated)
+    
+    RMQ->>F: Consume Message
+    F->>F: Agentic Loop (Executive Formatting)
+    F->>SS: Mark as Completed (Final Result)
+    
+    loop Polling
+        User->>API: GET /query/status/{saga_id}
+        API->>SS: Fetch Current State
+        SS-->>API: Current Data
+        API-->>User: Status + Results (if done)
+    end
 ```
 
 ---
