@@ -26,7 +26,6 @@ def run_result_formatting_agentic(message: QueryExecutedMessage) -> tuple[str, s
     chroma_client = ChromaMCPClient()
     
     tools = [
-        chroma_client.get_gemini_tool("search_relevant_schema", message=message),
         chroma_client.get_gemini_tool("search_business_knowledge", message=message)
     ]
     agent = GeminiClient(tools=tools)
@@ -35,9 +34,6 @@ def run_result_formatting_agentic(message: QueryExecutedMessage) -> tuple[str, s
     You are a Senior Business Intelligence Consultant. Your goal is to transform technical database results into a professional executive summary.
     
     USER QUESTION: "{message.question}"
-    
-    SQL LOGIC USED:
-    {message.generated_sql}
     
     RAW DATABASE RESULTS:
     {message.raw_results}
