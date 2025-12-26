@@ -36,7 +36,6 @@ def run_agentic_sql_generation(message: QueryInitiatedMessage, db_config_dict: D
     tools = [
         db_client.get_gemini_tool("list_tables", message=message),
         db_client.get_gemini_tool("describe_table", message=message),
-        chroma_client.get_gemini_tool("search_relevant_schema", message=message),
         chroma_client.get_gemini_tool("search_business_knowledge", message=message)
     ]
     agent = GeminiClient(tools=tools)
@@ -45,7 +44,7 @@ def run_agentic_sql_generation(message: QueryInitiatedMessage, db_config_dict: D
     
     CRITICAL RULES:
     1. FIRST, use `list_tables` to see which tables exist.
-    2. Then, use `search_relevant_schema` and `search_business_knowledge` to identify relevant tables and understand business rules.
+    2. Then, use `search_business_knowledge` to identify relevant tables and understand business rules.
     3. YOU MUST call `describe_table(table_name)` for EVERY table you include in your SQL to get the exact final column names.
     4. If the question is NOT related to the available database schema or business scope, state clearly that it is "OUT_OF_SCOPE" and explain why.
     5. If NO tables exist in the database, the answer is "OUT_OF_SCOPE".

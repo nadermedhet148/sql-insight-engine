@@ -99,74 +99,36 @@ class GenericMCPClient:
         return res.content if res.success else f"Error: {res.error}"
 
     def get_gemini_tool(self, tool_name: str, message: Any = None):
-        """Returns a tool function that Gemini can call, which internally calls the MCP tool."""
         
         if tool_name == "search_relevant_schema":
             def search_relevant_schema(query: str, n_results: int = 2) -> str:
-                """
-                Search for relevant database tables and columns based on a semantic query.
-                
-                Args:
-                    query: The semantic search query (e.g., 'customer orders and payments')
-                    n_results: Number of results to return (default: 2)
-                """
                 return self._run_tool_sync("search_relevant_schema", {"query": query, "n_results": int(n_results)}, message)
             return search_relevant_schema
             
         elif tool_name == "search_business_knowledge":
             def search_business_knowledge(query: str, n_results: int = 1) -> str:
-                """
-                Search for business rules, definitions, or organizational knowledge.
-                
-                Args:
-                    query: The business-related query (e.g., 'What is an active customer?')
-                    n_results: Number of results to return (default: 1)
-                """
                 return self._run_tool_sync("search_business_knowledge", {"query": query, "n_results": int(n_results)}, message)
             return search_business_knowledge
             
         elif tool_name == "list_tables":
             def list_tables(schema: str = "public") -> str:
-                """
-                List all tables in the database.
-                
-                Args:
-                    schema: Schema name (default: public)
-                """
                 return self._run_tool_sync("list_tables", {"schema": schema}, message)
             return list_tables
             
         elif tool_name == "describe_table":
             def describe_table(table_name: str, schema: str = "public") -> str:
-                """
-                Get detailed schema information about a specific table.
-                
-                Args:
-                    table_name: Name of the table to describe
-                    schema: Schema name (default: public)
-                """
+         
                 return self._run_tool_sync("describe_table", {"table_name": table_name, "schema": schema}, message)
             return describe_table
             
         elif tool_name == "get_schema_summary":
             def get_schema_summary(schema: str = "public") -> str:
-                """
-                Get a complete summary of the database schema.
-                
-                Args:
-                    schema: Schema name (default: public)
-                """
+     
                 return self._run_tool_sync("get_schema_summary", {"schema": schema}, message)
             return get_schema_summary
             
         elif tool_name == "run_query":
             def run_query(query: str) -> str:
-                """
-                Execute a read-only SQL SELECT query and return results.
-                
-                Args:
-                    query: SQL SELECT query to execute
-                """
                 return self._run_tool_sync("run_query", {"query": query}, message)
             return run_query
             

@@ -196,10 +196,6 @@ class PostgresMCPServer:
 def build_connection_url(db_type: str, host: str, port: int, db_name: str, username: str, password: str) -> str:
     if db_type == "postgresql":
         return f"postgresql://{username}:{password}@{host}:{port or 5432}/{db_name}"
-    elif db_type == "mysql":
-        return f"mysql+pymysql://{username}:{password}@{host}:{port or 3306}/{db_name}"
-    else:
-        return f"postgresql://{username}:{password}@{host}:{port or 5432}/{db_name}"
 
 
 if __name__ == "__main__":
