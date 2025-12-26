@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  metadata_store:
+    image: postgres:15
+    container_name: metadata_store
+    environment:
+      POSTGRES_USER: ${METADATA_DB_USER}
+      POSTGRES_PASSWORD: ${METADATA_DB_PASSWORD}
+      POSTGRES_DB: ${METADATA_DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - metadata_data:/var/lib/postgresql/data
+    networks:
+      - insight_network
+
+  external_test_db:
+    image: postgres:15
+    container_name: external_test_db
+    environment:
+      POSTGRES_USER: ${TEST_DB_USER}
+      POSTGRES_PASSWORD: ${TEST_DB_PASSWORD}
+      POSTGRES_DB: ${TEST_DB_NAME}
+    ports:
+      - "5433:5432"
+    volumes:
+      - external_test_data:/var/lib/postgresql/data
+    networks:
+      - insight_network
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - insight_network
+
+  minio:
+    image: minio/minio
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - insight_network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api
+    volumes:
+      - ./src:/app/src
+    ports:
+      - "8001:8000"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${METADATA_DB_USER:-admin}:${METADATA_DB_PASSWORD:-password}@metadata_store:5432/${METADATA_DB_NAME:-insight_engine}
+      - DATABASE_M_URL=postgresql://${METADATA_DB_USER:-admin}:${METADATA_DB_PASSWORD:-password}@metadata_store:5432/${METADATA_DB_NAME:-insight_engine}
+      - REDIS_HOST=redis
+      - RABBITMQ_HOST=rabbitmq
+      - CHROMA_HOST=chromadb
+      - MINIO_HOST=minio
+    depends_on:
+      - metadata_store
+      - chromadb
+      - minio
+      - rabbitmq
+      - redis
+    networks:
+      - insight_network
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - insight_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - insight_network
+
+volumes:
+  metadata_data:
+  external_test_data:
+  chroma_data:
+  minio_data:
+
+
+networks:
+  insight_network:
+    driver: bridge
