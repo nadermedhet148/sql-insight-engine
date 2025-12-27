@@ -54,15 +54,41 @@ services:
     networks:
       - insight_network
 
+  mcp-postgres:
+    build:
+      context: ./packages/mcp-postgres
+    container_name: mcp-postgres
+    ports:
+      - "8011:8001"
+    env_file:
+      - .env
+    networks:
+      - insight_network
+
+  mcp-chroma:
+    build:
+      context: ./packages/mcp-chroma
+    container_name: mcp-chroma
+    ports:
+      - "8012:8002"
+    env_file:
+      - .env
+    environment:
+      - CHROMA_HOST=chromadb
+    depends_on:
+      - chromadb
+    networks:
+      - insight_network
+
   api:
     build:
-      context: .
+      context: ./apps/sql-insight-engine
       dockerfile: Dockerfile
     container_name: api
     volumes:
-      - ./src:/app/src
+      - ./apps/sql-insight-engine/src:/app/src
     ports:
-      - "8001:8000"
+      - "8888:8000"
     env_file:
       - .env
     environment:
@@ -72,12 +98,16 @@ services:
       - RABBITMQ_HOST=rabbitmq
       - CHROMA_HOST=chromadb
       - MINIO_HOST=minio
+      - POSTGRES_MCP_URL=http://mcp-postgres:8001/sse
+      - CHROMA_MCP_URL=http://mcp-chroma:8002/sse
     depends_on:
       - metadata_store
       - chromadb
       - minio
       - rabbitmq
       - redis
+      - mcp-postgres
+      - mcp-chroma
     networks:
       - insight_network
 

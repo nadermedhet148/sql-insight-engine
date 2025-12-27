@@ -1,0 +1,16 @@
+[project]
+name = "mcp-chroma"
+version = "0.1.0"
+description = "MCP Server for ChromaDB"
+dependencies = [
+    "mcp[server]",
+    "chromadb",
+    "python-dotenv",
+    "uvicorn",
+    "fastapi",
+    "httpx"
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
