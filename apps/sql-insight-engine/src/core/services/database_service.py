@@ -1,6 +1,8 @@
 import asyncio
+import time
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
+from core.mcp.client import mcp_manager, MCPToolResult
 
 @dataclass
 class DatabaseOperationResult:
@@ -24,20 +26,33 @@ class DatabaseService:
             asyncio.set_event_loop(loop)
         
         if loop.is_running():
-            # If we are already in an event loop (like in some async frameworks)
-            # we might need a different approach, but for RabbitMQ consumers this is fine.
             import nest_asyncio
             nest_asyncio.apply()
             
         return loop.run_until_complete(coro)
 
-    def execute_query(self, db_config, query: str, message: Any = None) -> DatabaseOperationResult:
-        """Execute a SQL SELECT query via MCP tool"""
-        from core.mcp.client import create_mcp_client_from_config
+    async def _call_tool_async(self, db_config, tool_name: str, arguments: Dict[str, Any]) -> MCPToolResult:
+        """Helper to call an MCP tool asynchronously with db context"""
+        db_url = f"postgresql://{db_config.username}:{db_config.password}@{db_config.host}:{db_config.port or 5432}/{db_config.db_name}"
         
+        # Ensure tools are refreshed
+        if not mcp_manager.tools_map:
+            await mcp_manager.refresh_tools()
+            
+        if tool_name not in mcp_manager.tools_map:
+            return MCPToolResult(success=False, content="", error=f"Tool {tool_name} not found")
+            
+        mcp_client, _ = mcp_manager.tools_map[tool_name]
+        
+        # Inject db_url
+        arguments["db_url"] = db_url
+        
+        return await mcp_client.call_tool(tool_name, arguments)
+
+    def execute_query(self, db_config, query: str) -> DatabaseOperationResult:
+        """Execute a SQL SELECT query via MCP tool"""
         try:
-            client = create_mcp_client_from_config(db_config)
-            result = self._run_async(client.call_tool("run_query", {"query": query}, message=message))
+            result = self._run_async(self._call_tool_async(db_config, "run_query", {"query": query}))
             return DatabaseOperationResult(
                 success=result.success,
                 data=result.content,
@@ -46,21 +61,13 @@ class DatabaseService:
         except Exception as e:
             return DatabaseOperationResult(success=False, data="", error=str(e))
 
-    def get_table_names(self, db_config, schema: Optional[str] = None, message: Any = None) -> List[str]:
+    def get_table_names(self, db_config) -> List[str]:
         """Get list of table names via MCP tool"""
-        from core.mcp.client import create_mcp_client_from_config
-        
         try:
-            client = create_mcp_client_from_config(db_config)
-            args = {}
-            if schema:
-                args["schema"] = schema
-                
-            result = self._run_async(client.call_tool("list_tables", args, message=message))
+            result = self._run_async(self._call_tool_async(db_config, "list_tables", {}))
             
-            print(f"\n{'='*50}\n[DEBUG] RAW MCP RESPONSE FOR list_tables:\n{result.content}\n{'='*50}\n")
-            if result.success and "Tables in database:" in result.content:
-                # Basic parsing of the markdown-like output
+            if result.success:
+                # Basic parsing of the markdown-like output from mcp-postgres
                 lines = result.content.split('\n')
                 tables = []
                 for line in lines:
@@ -72,13 +79,11 @@ class DatabaseService:
         except Exception as e:
             print(f"Warning: Failed to get table names: {e}")
             return []
-    def describe_table(self, db_config, table_name: str, message: Any = None) -> DatabaseOperationResult:
+
+    def describe_table(self, db_config, table_name: str) -> DatabaseOperationResult:
         """Get detailed schema for a table via MCP tool"""
-        from core.mcp.client import create_mcp_client_from_config
-        
         try:
-            client = create_mcp_client_from_config(db_config)
-            result = self._run_async(client.call_tool("describe_table", {"table_name": table_name}, message=message))
+            result = self._run_async(self._call_tool_async(db_config, "describe_table", {"table_name": table_name}))
             return DatabaseOperationResult(
                 success=result.success,
                 data=result.content,

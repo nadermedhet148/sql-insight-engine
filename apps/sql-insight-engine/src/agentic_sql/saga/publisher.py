@@ -15,7 +15,6 @@ class SagaPublisher:
     """Publisher for saga messages"""
     
     # Queue names for each saga step
-    QUEUE_CHECK_TABLES = "query_check_tables"
     QUEUE_GENERATE_QUERY = "query_generate_query"
     QUEUE_EXECUTE_QUERY = "query_execute_query"
     QUEUE_FORMAT_RESULT = "query_format_result"
@@ -47,7 +46,6 @@ class SagaPublisher:
     def _declare_queues(self):
         """Declare all saga queues"""
         queues = [
-            self.QUEUE_CHECK_TABLES,
             self.QUEUE_GENERATE_QUERY,
             self.QUEUE_EXECUTE_QUERY,
             self.QUEUE_FORMAT_RESULT,
@@ -81,21 +79,16 @@ class SagaPublisher:
         
         print(f"[SAGA PUBLISHER] Published to '{queue}' - Saga ID: {message.saga_id}")
     
-    
-    def publish_tables_check(self, message: SagaBaseMessage):
-        """Publish to tables check (Now merged with query generation)"""
-        self.publish(self.QUEUE_GENERATE_QUERY, message)
-    
     def publish_query_generation(self, message: SagaBaseMessage):
-        """Publish to query generation queue (Step 3)"""
+        """Publish to query generation queue (Step 1)"""
         self.publish(self.QUEUE_GENERATE_QUERY, message)
     
     def publish_query_execution(self, message: SagaBaseMessage):
-        """Publish to query execution queue (Step 4)"""
+        """Publish to query execution queue (Step 2)"""
         self.publish(self.QUEUE_EXECUTE_QUERY, message)
     
     def publish_result_formatting(self, message: SagaBaseMessage):
-        """Publish to result formatting queue (Step 5)"""
+        """Publish to result formatting queue (Step 3)"""
         self.publish(self.QUEUE_FORMAT_RESULT, message)
     
     def publish_error(self, message: SagaBaseMessage):

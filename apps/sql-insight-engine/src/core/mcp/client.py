@@ -210,32 +210,4 @@ def get_discovered_tools(message: Any = None, context: Dict[str, Any] = None) ->
     
     return mcp_manager.get_gemini_tools(message, context)
 
-# Legacy compatibility (to be removed once consumers are updated)
-class DatabaseMCPClient(GenericMCPClient):
-    def __init__(self, db_url: str):
-        url = os.getenv("POSTGRES_MCP_URL", "http://mcp-postgres:8001/sse")
-        super().__init__(url)
-        self.db_url = db_url
 
-    async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> MCPToolResult:
-        arguments["db_url"] = self.db_url
-        return await super().call_tool(tool_name, arguments)
-
-class ChromaMCPClient(GenericMCPClient):
-    def __init__(self):
-        url = os.getenv("CHROMA_MCP_URL", "http://mcp-chroma:8002/sse")
-        super().__init__(url)
-
-def create_mcp_client_from_config(db_config) -> DatabaseMCPClient:
-    def build_connection_url(db_type, host, port, db_name, username, password):
-        return f"postgresql://{username}:{password}@{host}:{port or 5432}/{db_name}"
-    
-    db_url = build_connection_url(
-        db_type=db_config.db_type,
-        host=db_config.host,
-        port=getattr(db_config, 'port', None) or 5432,
-        db_name=db_config.db_name,
-        username=db_config.username,
-        password=db_config.password
-    )
-    return DatabaseMCPClient(db_url)
