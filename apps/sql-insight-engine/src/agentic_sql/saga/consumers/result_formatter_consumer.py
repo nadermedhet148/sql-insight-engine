@@ -16,18 +16,14 @@ from agentic_sql.saga.messages import (
 from agentic_sql.saga.publisher import SagaPublisher
 from agentic_sql.saga.state_store import get_saga_state_store
 from core.gemini_client import GeminiClient
-from core.mcp.client import DatabaseMCPClient, ChromaMCPClient
+from core.mcp.client import get_discovered_tools
 from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_saga_error, get_interaction_history
 
 
 
 def run_result_formatting_agentic(message: QueryExecutedMessage) -> tuple[str, str, Dict[str, Any]]:
     """Use Gemini with tools to format results and provide professional insights"""
-    chroma_client = ChromaMCPClient()
-    
-    tools = [
-        chroma_client.get_gemini_tool("search_business_knowledge", message=message)
-    ]
+    tools = get_discovered_tools(message=message, context={"account_id": message.account_id})
     agent = GeminiClient(tools=tools)
     
     prompt = f"""
@@ -52,7 +48,10 @@ def run_result_formatting_agentic(message: QueryExecutedMessage) -> tuple[str, s
     try:
         chat = agent.start_chat(enable_automatic_function_calling=True)
         response = chat.send_message(prompt)
-        text = response.text
+        try:
+            text = response.text or ""
+        except (ValueError, AttributeError):
+            text = ""
         
         formatted_response = ""
         if "EXECUTIVE SUMMARY:" in text:
@@ -119,6 +118,7 @@ def process_result_formatting(ch, method, properties, body):
         )
         
         final_message.call_stack = message.call_stack.copy()
+        final_message.all_tool_calls = message.all_tool_calls.copy()
         final_message._current_tool_calls = message._current_tool_calls.copy()
         message._current_tool_calls = []
         
@@ -150,20 +150,12 @@ def process_result_formatting(ch, method, properties, body):
         print(f"[SAGA STEP 3] Total duration: {total_duration:.2f}ms")
         print(f"[SAGA STEP 3] Total tokens used: {total_tokens}")
         
-        result_dict = {
+        result_dict = final_message.to_dict()
+        result_dict.update({
             "success": True,
-            "saga_id": message.saga_id,
-            "question": message.question,
-            "generated_sql": message.generated_sql,
-            "raw_results": message.raw_results,
-            "reasoning": reasoning,
-            "formatted_response": formatted_response,
-            "call_stack": [entry.to_dict() for entry in final_message.call_stack],
             "total_duration_ms": total_duration,
-            "total_tokens": total_tokens,
-            "user_id": message.user_id,
-            "account_id": message.account_id
-        }
+            "total_tokens": total_tokens
+        })
         
         update_saga_state(message.saga_id, result_dict, status="completed")
         

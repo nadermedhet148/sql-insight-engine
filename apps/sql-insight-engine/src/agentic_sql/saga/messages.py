@@ -37,16 +37,21 @@ class SagaBaseMessage:
     question: str
     call_stack: List[CallStackEntry] = field(default_factory=list)
     _current_tool_calls: List[Dict[str, Any]] = field(default_factory=list)
+    all_tool_calls: List[Dict[str, Any]] = field(default_factory=list)
 
-    def track_tool_call(self, tool: str, args: Dict[str, Any], response: Any, duration_ms: float = 0, status: str = "success"):
-        """Track an MCP tool call to be included in the next call stack entry"""
-        self._current_tool_calls.append({
+    def add_tool_call(self, tool: str, args: Dict[str, Any], response: Any, duration_ms: float = 0, status: str = "success"):
+        """Track an MCP tool call to be included in the next call stack entry and persisted"""
+        from agentic_sql.saga.utils import sanitize_for_json
+        call_data = {
             "tool": tool,
-            "args": args,
-            "response": response,
+            "args": sanitize_for_json(args),
+            "response": sanitize_for_json(response),
             "duration_ms": duration_ms,
-            "status": status
-        })
+            "status": status,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        self._current_tool_calls.append(call_data)
+        self.all_tool_calls.append(call_data)
 
     def add_to_call_stack(self, step_name: str, status: str = "success", 
                           duration_ms: Optional[float] = None, **metadata):
@@ -75,7 +80,8 @@ class SagaBaseMessage:
             "user_id": self.user_id,
             "account_id": self.account_id,
             "question": self.question,
-            "call_stack": [entry.to_dict() for entry in self.call_stack]
+            "call_stack": [entry.to_dict() for entry in self.call_stack],
+            "all_tool_calls": self.all_tool_calls
         }
 
 
@@ -180,7 +186,8 @@ class SagaErrorMessage(SagaBaseMessage):
 
 
 def message_to_json(message: SagaBaseMessage) -> str:
-    return json.dumps(message.to_dict())
+    from agentic_sql.saga.utils import sanitize_for_json
+    return json.dumps(sanitize_for_json(message.to_dict()))
 
 
 def message_from_dict(data: dict, message_class) -> SagaBaseMessage:
@@ -203,5 +210,6 @@ def message_from_dict(data: dict, message_class) -> SagaBaseMessage:
     # Create message instance
     message = message_class(**data_copy)
     message.call_stack = call_stack
+    message.all_tool_calls = data.get("all_tool_calls", [])
     
     return message

@@ -8,16 +8,14 @@ from agentic_sql.saga.messages import (
 )
 from agentic_sql.saga.publisher import SagaPublisher
 from core.gemini_client import GeminiClient
-from core.mcp.client import DatabaseMCPClient
+from core.mcp.client import initialize_mcp, get_discovered_tools
 from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_saga_error, get_interaction_history
 
 
 
 def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, Any]) -> tuple[bool, str, str, List[Dict[str, Any]]]:
     db_url = f"postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}"
-    db_client = DatabaseMCPClient(db_url)
-    
-    tools = [db_client.get_gemini_tool("run_query", message=message)]
+    tools = get_discovered_tools(message=message, context={"db_url": db_url, "account_id": message.account_id})
     agent = GeminiClient(tools=tools)
     
     prompt = f"""
@@ -27,9 +25,9 @@ def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, 
     {message.generated_sql}
     
     INSTRUCTIONS:
-    1. Make sure the query have a limit of 10 rows max 
-    2. Make sure the query is valid , can be executed , not a DDL query and not a DML query 
-    3. Call the `run_query` tool with the provided SQL.
+    1. Make sure the query have a limit of 10 rows max.
+    2. Make sure the query is valid, can be executed, not a DDL query and not a DML query.
+    3. Call the `run_query(query=..., db_url=...)` tool. Pass the SQL string as the `query` argument and the provided connection string as `db_url`.
     4. If the query is successful, return the exact raw results.
     5. If the query fails with an error, explain the error clearly.
     
@@ -40,24 +38,30 @@ def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, 
     """
     
     try:
+        print(f"[TRACE] Starting Gemini chat for saga {message.saga_id}")
         chat = agent.start_chat(enable_automatic_function_calling=True)
+        print(f"[TRACE] Sending message to Gemini for saga {message.saga_id}")
         response = chat.send_message(prompt)
-        text = response.text
+        print(f"[TRACE] Received response from Gemini for saga {message.saga_id}")
+        try:
+            full_text = response.text or ""
+        except (ValueError, AttributeError):
+            full_text = ""
         
-        success = "STATUS: SUCCESS" in text
+        success = "STATUS: SUCCESS" in full_text
         
         # Robust extraction of RESULTS
         results = ""
-        if "RESULTS:" in text:
-            results = text.split("RESULTS:")[1].strip()
-        elif not success and not "STATUS:" in text:
+        if "RESULTS:" in full_text:
+            results = full_text.split("RESULTS:")[1].strip()
+        elif not success and not "STATUS:" in full_text:
             # If no tags but failed, maybe the whole thing is the error
-            results = text.strip()
+            results = full_text.strip()
             
         # Robust extraction of REASONING
         reasoning = "N/A"
-        if "REASONING:" in text:
-            parts = text.split("REASONING:")
+        if "REASONING:" in full_text:
+            parts = full_text.split("REASONING:")
             if len(parts) > 1:
                 # Extract between REASONING: and RESULTS: (if RESULTS exists)
                 if "RESULTS:" in parts[1]:
@@ -66,12 +70,12 @@ def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, 
                     reasoning = parts[1].strip()
         
         # Fallback for reasoning if it's still N/A
-        if reasoning == "N/A" and text:
-            if "STATUS:" in text:
+        if reasoning == "N/A" and full_text:
+            if "STATUS:" in full_text:
                 # Use everything except the STATUS tag
-                reasoning = text.split("STATUS:")[0].strip() or text.strip()
+                reasoning = full_text.split("STATUS:")[0].strip() or full_text.strip()
             else:
-                reasoning = text.strip()
+                reasoning = full_text.strip()
         
         interaction_history = get_interaction_history(chat)
         return success, results, reasoning, interaction_history
@@ -139,6 +143,7 @@ def process_query_execution(ch, method, properties, body):
         )
         
         next_message.call_stack = message.call_stack.copy()
+        next_message.all_tool_calls = message.all_tool_calls.copy()
         next_message._current_tool_calls = message._current_tool_calls.copy()
         message._current_tool_calls = []
         
@@ -158,11 +163,7 @@ def process_query_execution(ch, method, properties, body):
         publisher = SagaPublisher()
         publisher.publish_result_formatting(next_message)
         
-        update_saga_state(message.saga_id, {
-            "call_stack": [entry.to_dict() for entry in next_message.call_stack],
-            "raw_results": raw_results,
-            "reasoning": reasoning
-        })
+        update_saga_state(message.saga_id, next_message.to_dict())
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
         
@@ -183,4 +184,3 @@ def process_query_execution(ch, method, properties, body):
 def start_query_executor_consumer(host: str = None):
     consumer = QueryExecutorConsumer(host=host)
     consumer.start_consuming()
-

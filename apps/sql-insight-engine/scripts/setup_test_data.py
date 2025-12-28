@@ -12,7 +12,7 @@ from core.database.session import SessionLocal as MetadataSessionLocal, engine a
 from account.models import User as MetadataUser, UserDBConfig
 
 # --- Configuration for External Test DB ---
-TEST_DB_URL = "postgresql://test_user:test_password@localhost:5433/external_test_db"
+TEST_DB_URL = os.getenv("EXTERNAL_TEST_DB_URL", "postgresql://test_user:test_password@external_test_db:5432/external_test_db")
 TestBase = declarative_base()
 
 # --- Models for External Test DB ---
@@ -93,7 +93,7 @@ def setup_test_database():
         print("Generating 1,000,000 Orders (this may take a while)...")
         
         BATCH_SIZE = 10000
-        TOTAL_ORDERS = 1000000
+        TOTAL_ORDERS = 10000
         statuses = ["pending", "completed", "cancelled", "shipped"]
         
         # Get user and product ID ranges using what we just inserted
@@ -125,13 +125,46 @@ def setup_test_database():
 
         print("Test Database seeded successfully.")
     
+    finally:
+        session.close()
+
+def setup_metadata_user():
+    print("Setting up Metadata User...")
+    session = MetadataSessionLocal()
+    try:
+        # Create a test user if not exists
+        user = session.query(MetadataUser).filter(MetadataUser.id == 1).first()
+        if not user:
+            user = MetadataUser(id=1, username="testuser", email="test@example.com", account_id="ACC123", quota=100)
+            session.add(user)
+            session.commit()
+            print("Created Metadata User 1")
+        
+        # Add DB Config
+        db_config = session.query(UserDBConfig).filter(UserDBConfig.user_id == 1).first()
+        if not db_config:
+            db_config = UserDBConfig(
+                user_id=1,
+                host="external_test_db",
+                port=5432,
+                db_name="external_test_db",
+                username="test_user",
+                password="test_password",
+                db_type="postgresql"
+            )
+            session.add(db_config)
+            session.commit()
+            print("Added DB Config for User 1")
+        else:
+            print("DB Config already exists for User 1")
+            
     except Exception as e:
-        print(f"Error setting up Test Database: {e}")
+        print(f"Error setting up Metadata User: {e}")
         session.rollback()
     finally:
         session.close()
 
 
 if __name__ == "__main__":
+    setup_metadata_user()
     setup_test_database()
- 

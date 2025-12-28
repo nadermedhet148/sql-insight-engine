@@ -8,7 +8,8 @@ dependencies = [
     "psycopg2-binary",
     "python-dotenv",
     "uvicorn",
-    "fastapi"
+    "fastapi",
+    "httpx"
 ]
 
 [build-system]

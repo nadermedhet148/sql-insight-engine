@@ -9,7 +9,7 @@ from agentic_sql.saga.messages import (
 )
 from agentic_sql.saga.publisher import SagaPublisher
 from core.gemini_client import GeminiClient
-from core.mcp.client import DatabaseMCPClient, ChromaMCPClient
+from core.mcp.client import initialize_mcp, get_discovered_tools
 from account.models import User
 from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_saga_error, get_interaction_history
 
@@ -26,29 +26,23 @@ def extract_tables_from_sql(sql: str) -> List[str]:
             tables.append(table.lower())
     return list(set(tables))
 
-def run_agentic_sql_generation(message: QueryInitiatedMessage, db_config_dict: Dict[str, Any]) -> tuple[str, str, List[Dict]]:
+def run_agentic_sql_generation(message: QueryInitiatedMessage, db_config_dict: Dict[str, Any]) -> tuple[str, str, str, Dict, List, bool]:
     
     db_url = f"postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}"
-    db_client = DatabaseMCPClient(db_url)
-    chroma_client = ChromaMCPClient()
-    
-    # Setup Gemini with tools
-    tools = [
-        db_client.get_gemini_tool("list_tables", message=message),
-        db_client.get_gemini_tool("describe_table", message=message),
-        chroma_client.get_gemini_tool("search_business_knowledge", message=message)
-    ]
+    tools = get_discovered_tools(message=message, context={"db_url": db_url, "account_id": message.account_id})
     agent = GeminiClient(tools=tools)
     
     prompt = f"""You are a Senior SQL Analyst and Gatekeeper. Your goal is to write a PostgreSQL query for: "{message.question}"
     
+    DATABASE CONNECTION INFO:
+    Use this db_url for any database tools: postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}
+
     CRITICAL RULES:
-    1. FIRST, use `list_tables` to see which tables exist.
-    2. Then, use `search_business_knowledge` to identify relevant tables and understand business rules.
-    3. YOU MUST call `describe_table(table_name)` for EVERY table you include in your SQL to get the exact final column names.
+    1. FIRST, use `list_tables(db_url=...)` to see which tables exist.
+    2. Then, use `search_relevant_schema(query=..., account_id=..., n_results=...)` to identify relevant tables.
+    3. YOU MUST call `describe_table(table_name=..., db_url=...)` for EVERY table you include in your SQL to get the exact column names.
     4. If the question is NOT related to the available database schema or business scope, state clearly that it is "OUT_OF_SCOPE" and explain why.
-    5. If NO tables exist in the database, the answer is "OUT_OF_SCOPE".
-    6. Return a list of used table names.
+    5. Return a list of used table names.
     
     STRATEGY:
     - Determine if the question is RELEVANT or OUT_OF_SCOPE.
@@ -61,11 +55,23 @@ def run_agentic_sql_generation(message: QueryInitiatedMessage, db_config_dict: D
     SQL: [The final SQL query if RELEVANT, otherwise NONE]
     USED_TABLES: [Comma separated list of tables used in the SQL, or NONE]
     """
-    
+    print(f"[TRACE] Starting Gemini chat for saga {message.saga_id}")
     chat = agent.start_chat(enable_automatic_function_calling=True)
+    print(f"[TRACE] Sending message to Gemini for saga {message.saga_id}")
     response = chat.send_message(prompt)
+    print(f"[TRACE] Received response from Gemini for saga {message.saga_id}")
+    try:
+        full_text = response.text or ""
+    except (ValueError, AttributeError):
+        full_text = ""
     
-    full_text = response.text
+    if not full_text:
+        # Check if it was a function call only
+        print(f"[TRACE] Gemini response has no text, checking for function calls...")
+        # Since enable_automatic_function_calling=True, Gemini might have called the tools.
+        # If it still has no text after tools, we might need a follow-up or just assume it's thinking.
+        # But usually at the end of automatic calling it should provide text.
+        pass
     
     interaction_history = get_interaction_history(chat)
 
@@ -177,6 +183,7 @@ def process_query_generation(ch, method, properties, body):
         )
         
         next_message.call_stack = message.call_stack.copy()
+        next_message.all_tool_calls = message.all_tool_calls.copy()
         next_message._current_tool_calls = message._current_tool_calls.copy()
         message._current_tool_calls = []
         
@@ -199,11 +206,7 @@ def process_query_generation(ch, method, properties, body):
         publisher = SagaPublisher()
         publisher.publish_query_execution(next_message)
         
-        update_saga_state(message.saga_id, {
-            "call_stack": [entry.to_dict() for entry in next_message.call_stack],
-            "generated_sql": generated_sql,
-            "reasoning": llm_reasoning
-        })
+        update_saga_state(message.saga_id, next_message.to_dict())
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
         

@@ -124,12 +124,14 @@ def store_saga_error(message: SagaBaseMessage, error_step: str, error_msg: str,
         "error_message": error_msg,
         "formatted_response": formatted_response,
         "call_stack": [entry.to_dict() for entry in message.call_stack],
+        "all_tool_calls": message.all_tool_calls,
         "status": "error",
         "user_id": message.user_id,
         "account_id": message.account_id
     }
     
-    saga_store.store_result(message.saga_id, error_dict, status="error")
+    sanitized_error = sanitize_for_json(error_dict)
+    saga_store.store_result(message.saga_id, sanitized_error, status="error")
     
     # 3. Publish error event
     try:

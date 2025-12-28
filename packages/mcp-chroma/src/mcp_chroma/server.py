@@ -4,16 +4,22 @@ import sys
 import logging
 import json
 from typing import Any, List, Optional
-from mcp.server import Server
+from mcp.server import Server, NotificationOptions
 from mcp.server.sse import SseServerTransport
 from mcp.types import Tool, TextContent
 import chromadb
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from mcp.server.models import InitializationOptions
+import mcp.types as types
 import uvicorn
 import httpx
 
 load_dotenv()
+
+REGISTRY_URL = os.getenv("MCP_REGISTRY_URL", "http://mcp-registry:8010")
+SERVER_URL = os.getenv("MCP_SERVER_URL", "http://mcp-chroma:8002/sse")
+
 
 # Configure logging to stderr
 logging.basicConfig(
@@ -26,10 +32,7 @@ logger = logging.getLogger("mcp-chroma")
 class ChromaMCPServer:
     def __init__(self, server_name: str = "mcp-chroma"):
         self.server_name = server_name
-        self.server = Server(server_name)
-        self.gemini_mcp_url = os.getenv("GEMINI_MCP_URL", "http://mcp-gemini:8003/sse")
-        self._setup_tools()
-        logger.info(f"Initialized ChromaMCPServer: {server_name}")
+        logger.info(f"Initialized ChromaMCPServer helper: {server_name}")
         
     def _get_client(self):
         host = os.getenv("CHROMA_HOST", "localhost")
@@ -49,11 +52,13 @@ class ChromaMCPServer:
             )
             return result.embeddings[0].values
         except Exception as e:
-            logger.error(f"Failed to get embedding: {e}")
+            logger.error(f"Failed to get embedding using SDK: {e}")
             raise
 
-    def _setup_tools(self):
-        @self.server.list_tools()
+    def create_server(self) -> Server:
+        server = Server(self.server_name)
+        
+        @server.list_tools()
         async def list_tools() -> list[Tool]:
             return [
                 Tool(
@@ -62,16 +67,16 @@ class ChromaMCPServer:
                     inputSchema={
                         "type": "object",
                         "properties": {
-                            "query": {"type": "string"},
-                            "account_id": {"type": "string"},
-                            "n_results": {"type": "integer", "default": 2}
+                            "query": {"type": "string", "description": "The search query or keyword"},
+                            "account_id": {"type": "string", "description": "The account ID to filter by"},
+                            "n_results": {"type": "integer", "default": 2, "description": "Number of results to return"}
                         },
                         "required": ["query", "account_id"]
                     }
                 )
             ]
 
-        @self.server.call_tool()
+        @server.call_tool()
         async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             if name == "search_relevant_schema":
                 query = arguments["query"]
@@ -104,18 +109,76 @@ class ChromaMCPServer:
             
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
 
+        return server
+
 mcp_server = ChromaMCPServer()
+from starlette.routing import Route
+
 app = FastAPI()
 sse = SseServerTransport("/messages")
 
-@app.get("/sse")
-async def handle_sse(request: Request):
-    async with sse.connect_sse(request.scope, request.receive, request._send) as (read_stream, write_stream):
-        await mcp_server.server.run(read_stream, write_stream, mcp_server.server.create_initialization_options())
+class SSEHandler:
+    async def __call__(self, scope, receive, send):
+        logger.info(f"New SSE connection from {scope.get('client')}")
+        try:
+            server = mcp_server.create_server()
+            async with sse.connect_sse(scope, receive, send) as (read_stream, write_stream):
+                logger.info("SSE connection established, running server...")
+                await server.run(
+                    read_stream,
+                    write_stream,
+                    InitializationOptions(
+                        server_name=mcp_server.server_name,
+                        server_version="0.1.0",
+                        capabilities=server.get_capabilities(
+                            notification_options=NotificationOptions(),
+                            experimental_capabilities={},
+                        ),
+                    )
+                )
+                logger.info("mcp_server.server.run returned")
+        except Exception as e:
+            logger.exception(f"Error in SSEHandler: {e}")
+        finally:
+            logger.info("SSEHandler finished")
 
-@app.post("/messages")
-async def handle_messages(request: Request):
-    await sse.handle_post_message(request.scope, request.receive, request._send)
+class MessagesHandler:
+    async def __call__(self, scope, receive, send):
+        logger.info(f"New message request from {scope.get('client')}")
+        try:
+            await sse.handle_post_message(scope, receive, send)
+            logger.info("Message handled")
+        except Exception as e:
+            logger.exception(f"Error in MessagesHandler: {e}")
+
+app.routes.append(Route("/sse", SSEHandler(), methods=["GET"]))
+app.routes.append(Route("/messages", MessagesHandler(), methods=["POST"]))
+
+async def register_with_registry():
+    """Register this server with the MCP Registry"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{REGISTRY_URL}/register",
+                json={
+                    "name": mcp_server.server_name,
+                    "url": SERVER_URL
+                },
+                timeout=5.0
+            )
+            if response.status_code == 200:
+                logger.info(f"Successfully registered with registry: {REGISTRY_URL}")
+            else:
+                logger.error(f"Failed to register with registry: {response.status_code}")
+    except Exception as e:
+        logger.error(f"Error registering with registry: {str(e)}")
+
+@app.on_event("startup")
+async def startup_event():
+    # Start registration in the background
+    asyncio.create_task(register_with_registry())
+
+# Removed @app.post handlers as they are now registered via add_route
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8002)

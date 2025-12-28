@@ -41,6 +41,14 @@ async def lifespan(app: FastAPI):
         start_query_executor_consumer,
         start_result_formatter_consumer
     )
+    from core.mcp.client import initialize_mcp
+    
+    # Pre-initialize MCP tools
+    print("\n[LIFESPAN] Initializing Dynamic MCP Tools...")
+    try:
+        await initialize_mcp()
+    except Exception as e:
+        print(f"[LIFESPAN] ✗ Failed to initialize MCP tools: {e}")
     
     consumers = [
         ("Query Generator", start_query_generator_consumer),
@@ -51,7 +59,10 @@ async def lifespan(app: FastAPI):
     threads = []
     mq_host = os.getenv("RABBITMQ_HOST", "localhost")
     
-    print("\n[LIFESPAN] Starting Saga Consumers...")
+    print("\n[LIFESPAN] Starting Saga Consumers (waiting for RabbitMQ)...")
+    import asyncio
+    await asyncio.sleep(5)  # Give RabbitMQ a moment to fully initialize
+    
     for name, starter_func in consumers:
         try:
             t = threading.Thread(

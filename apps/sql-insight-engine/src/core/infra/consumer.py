@@ -8,16 +8,25 @@ class BaseConsumer(ABC):
         self.queue_name = queue_name
         self.host = host or "localhost"
         
-        credentials = pika.PlainCredentials('guest', 'guest')
+        user = os.getenv("RABBITMQ_USER", "guest")
+        password = os.getenv("RABBITMQ_PASSWORD", "guest")
+        
+        credentials = pika.PlainCredentials(user, password)
         parameters = pika.ConnectionParameters(
             host=self.host,
             credentials=credentials,
-            heartbeat=600
+            heartbeat=600,
+            connection_attempts=10,
+            retry_delay=5
         )
-        self.connection = pika.BlockingConnection(parameters)
-        self.channel = self.connection.channel()
-        self.channel.queue_declare(queue=self.queue_name, durable=True)
-        self.channel.basic_qos(prefetch_count=1)
+        try:
+            self.connection = pika.BlockingConnection(parameters)
+            self.channel = self.connection.channel()
+            self.channel.queue_declare(queue=self.queue_name, durable=True)
+            self.channel.basic_qos(prefetch_count=1)
+        except Exception as e:
+            print(f"[CONSUMER] Error connecting to RabbitMQ at {self.host}: {e}")
+            raise e
 
     @abstractmethod
     def process_message(self, ch, method, properties, body):
