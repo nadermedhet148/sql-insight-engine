@@ -50,6 +50,7 @@ class SagaBaseMessage:
             "status": status,
             "timestamp": datetime.utcnow().isoformat()
         }
+        print(f"[SAGA MESSAGE] Adding tool call: {tool} to saga {self.saga_id} (Total: {len(self.all_tool_calls) + 1})")
         self._current_tool_calls.append(call_data)
         self.all_tool_calls.append(call_data)
 

@@ -23,7 +23,9 @@ from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_s
 
 def run_result_formatting_agentic(message: QueryExecutedMessage) -> tuple[str, str, Dict[str, Any]]:
     """Use Gemini with tools to format results and provide professional insights"""
-    tools = get_discovered_tools(message=message, context={"account_id": message.account_id})
+    all_tools = get_discovered_tools(message=message, context={"account_id": message.account_id})
+    # Formatter should NOT have run_query
+    tools = [t for t in all_tools if t.__name__ != "run_query"]
     agent = GeminiClient(tools=tools)
     
     prompt = f"""

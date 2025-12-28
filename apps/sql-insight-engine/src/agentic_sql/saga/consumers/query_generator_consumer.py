@@ -29,7 +29,9 @@ def extract_tables_from_sql(sql: str) -> List[str]:
 def run_agentic_sql_generation(message: QueryInitiatedMessage, db_config_dict: Dict[str, Any]) -> tuple[str, str, str, Dict, List, bool]:
     
     db_url = f"postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}"
-    tools = get_discovered_tools(message=message, context={"db_url": db_url, "account_id": message.account_id})
+    all_tools = get_discovered_tools(message=message, context={"db_url": db_url, "account_id": message.account_id})
+    # Generator should NOT have run_query to prevent premature execution
+    tools = [t for t in all_tools if t.__name__ != "run_query"]
     agent = GeminiClient(tools=tools)
     
     prompt = f"""You are a Senior SQL Analyst and Gatekeeper. Your goal is to write a PostgreSQL query for: "{message.question}"
@@ -53,7 +55,6 @@ def run_agentic_sql_generation(message: QueryInitiatedMessage, db_config_dict: D
     DECISION: [RELEVANT / OUT_OF_SCOPE]
     REASONING: [Your explanation of the decision and the data found]
     SQL: [The final SQL query if RELEVANT, otherwise NONE]
-    USED_TABLES: [Comma separated list of tables used in the SQL, or NONE]
     """
     print(f"[TRACE] Starting Gemini chat for saga {message.saga_id}")
     chat = agent.start_chat(enable_automatic_function_calling=True)
@@ -66,11 +67,7 @@ def run_agentic_sql_generation(message: QueryInitiatedMessage, db_config_dict: D
         full_text = ""
     
     if not full_text:
-        # Check if it was a function call only
         print(f"[TRACE] Gemini response has no text, checking for function calls...")
-        # Since enable_automatic_function_calling=True, Gemini might have called the tools.
-        # If it still has no text after tools, we might need a follow-up or just assume it's thinking.
-        # But usually at the end of automatic calling it should provide text.
         pass
     
     interaction_history = get_interaction_history(chat)

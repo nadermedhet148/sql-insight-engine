@@ -15,26 +15,32 @@ from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_s
 
 def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, Any]) -> tuple[bool, str, str, List[Dict[str, Any]]]:
     db_url = f"postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}"
-    tools = get_discovered_tools(message=message, context={"db_url": db_url, "account_id": message.account_id})
+    all_tools = get_discovered_tools(message=message, context={"db_url": db_url, "account_id": message.account_id})
+    # Executor ONLY needs run_query to avoid hallucinating search or using wrong tools
+    tools = [t for t in all_tools if t.__name__ == "run_query"]
+    print(f"[SAGA STEP 2] Executor for {message.saga_id} discovered {len(all_tools)} tools, using {len(tools)}: {[t.__name__ for t in tools]}")
     agent = GeminiClient(tools=tools)
     
     prompt = f"""
     You are a Database Operations Agent. Your task is to execute the following SQL query and return the results.
     
-    SQL QUERY:
+    ENVIRONMENT CONTEXT:
+    - Database URL: {db_url}
+    - Account ID: {message.account_id}
+    
+    SQL QUERY TO EXECUTE:
     {message.generated_sql}
     
-    INSTRUCTIONS:
-    1. Make sure the query have a limit of 10 rows max.
-    2. Make sure the query is valid, can be executed, not a DDL query and not a DML query.
-    3. Call the `run_query(query=..., db_url=...)` tool. Pass the SQL string as the `query` argument and the provided connection string as `db_url`.
-    4. If the query is successful, return the exact raw results.
-    5. If the query fails with an error, explain the error clearly.
+    CRITICAL INSTRUCTIONS:
+    1. You MUST call the `run_query(query=...)` tool. do not guess or hallucinate the results.
+    2. The query MUST have a LIMIT of 10 rows for safety unless it already has one.
+    3. If the query is a SELECT statement, call `run_query`.
+    4. If the query is DDL (CREATE, DROP, ALTER) or DML (INSERT, UPDATE, DELETE), refuse to execute it.
     
     RESPONSE FORMAT:
     STATUS: [SUCCESS/FAILED]
-    REASONING: [Your explanation of the decision and the data found]
-    RESULTS: [The raw table results or the error message]
+    REASONING: [Brief explanation of what the query does and why it is safe/unsafe]
+    RESULTS: [The raw list of rows from the tool, or the error message]
     """
     
     try:
@@ -46,37 +52,47 @@ def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, 
         try:
             full_text = response.text or ""
         except (ValueError, AttributeError):
-            full_text = ""
+            # Check if there are tool calls in the response parts
+            full_text = str(response)
         
-        success = "STATUS: SUCCESS" in full_text
-        
-        # Robust extraction of RESULTS
+        # Try to parse as JSON if the model was helpful enough to use it
+        success = False
         results = ""
-        if "RESULTS:" in full_text:
-            results = full_text.split("RESULTS:")[1].strip()
-        elif not success and not "STATUS:" in full_text:
-            # If no tags but failed, maybe the whole thing is the error
-            results = full_text.strip()
-            
-        # Robust extraction of REASONING
-        reasoning = "N/A"
-        if "REASONING:" in full_text:
-            parts = full_text.split("REASONING:")
-            if len(parts) > 1:
-                # Extract between REASONING: and RESULTS: (if RESULTS exists)
-                if "RESULTS:" in parts[1]:
-                    reasoning = parts[1].split("RESULTS:")[0].strip()
-                else:
-                    reasoning = parts[1].strip()
+        reasoning = ""
         
-        # Fallback for reasoning if it's still N/A
-        if reasoning == "N/A" and full_text:
-            if "STATUS:" in full_text:
-                # Use everything except the STATUS tag
-                reasoning = full_text.split("STATUS:")[0].strip() or full_text.strip()
+        # Clean up Markdown blocks
+        clean_text = full_text.replace("```json", "").replace("```", "").strip()
+        
+        try:
+            # Look for a JSON object in the text
+            import re
+            json_match = re.search(r'\{.*\}', clean_text, re.DOTALL)
+            if json_match:
+                data = json.loads(json_match.group(0))
+                success = data.get("STATUS", "").upper() == "SUCCESS"
+                reasoning = data.get("REASONING", "N/A")
+                results = str(data.get("RESULTS", ""))
             else:
-                reasoning = full_text.strip()
-        
+                # Fallback to tag-based parsing
+                success = "STATUS: SUCCESS" in full_text.upper()
+                
+                if "RESULTS:" in full_text:
+                    results = full_text.split("RESULTS:")[1].strip()
+                else:
+                    results = full_text.strip()
+                    
+                if "REASONING:" in full_text:
+                    parts = full_text.split("REASONING:")
+                    if "RESULTS:" in parts[1]:
+                        reasoning = parts[1].split("RESULTS:")[0].strip()
+                    else:
+                        reasoning = parts[1].strip()
+        except:
+            # Extreme fallback
+            success = "SUCCESS" in full_text.upper()
+            results = full_text
+            reasoning = "Parsed from raw text"
+            
         interaction_history = get_interaction_history(chat)
         return success, results, reasoning, interaction_history
     except Exception as e:
@@ -163,7 +179,12 @@ def process_query_execution(ch, method, properties, body):
         publisher = SagaPublisher()
         publisher.publish_result_formatting(next_message)
         
-        update_saga_state(message.saga_id, next_message.to_dict())
+        update_saga_state(message.saga_id, {
+            **next_message.to_dict(),
+            "reasoning": reasoning,
+            "execution_success": True,
+            "raw_results": raw_results
+        })
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
         
