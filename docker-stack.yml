@@ -1,0 +1,176 @@
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v2.10
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.swarmMode=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=insight_network"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - insight_network
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+
+  mcp-registry:
+    image: sql-insight-engine-mcp-registry:latest
+    environment:
+      - REDIS_HOST=redis
+    networks:
+      - insight_network
+    deploy:
+      replicas: 2
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.mcp-registry.rule=Host(`mcp-registry`)"
+        - "traefik.http.routers.mcp-registry.entrypoints=web"
+        - "traefik.http.services.mcp-registry.loadbalancer.server.port=8010"
+
+  mcp-postgres:
+    image: sql-insight-engine-mcp-postgres:latest
+    env_file:
+      - .env
+    environment:
+      - MCP_REGISTRY_URL=http://mcp-registry:8010
+      - MCP_SERVER_URL=http://mcp-postgres:8001/sse
+    networks:
+      - insight_network
+    deploy:
+      replicas: 3
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.mcp-postgres.rule=Host(`mcp-postgres`)"
+        - "traefik.http.routers.mcp-postgres.entrypoints=web"
+        - "traefik.http.services.mcp-postgres.loadbalancer.server.port=8001"
+
+  mcp-chroma:
+    image: sql-insight-engine-mcp-chroma:latest
+    env_file:
+      - .env
+    environment:
+      - CHROMA_HOST=chromadb
+      - MCP_REGISTRY_URL=http://mcp-registry:8010
+      - MCP_SERVER_URL=http://mcp-chroma:8002/sse
+    networks:
+      - insight_network
+    deploy:
+      replicas: 3
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.mcp-chroma.rule=Host(`mcp-chroma`)"
+        - "traefik.http.routers.mcp-chroma.entrypoints=web"
+        - "traefik.http.services.mcp-chroma.loadbalancer.server.port=8002"
+
+  metadata_store:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${METADATA_DB_USER}
+      POSTGRES_PASSWORD: ${METADATA_DB_PASSWORD}
+      POSTGRES_DB: ${METADATA_DB_NAME}
+    volumes:
+      - metadata_data:/var/lib/postgresql/data
+    networks:
+      - insight_network
+    deploy:
+      replicas: 1
+
+  external_test_db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${TEST_DB_USER}
+      POSTGRES_PASSWORD: ${TEST_DB_PASSWORD}
+      POSTGRES_DB: ${TEST_DB_NAME}
+    volumes:
+      - external_test_data:/var/lib/postgresql/data
+    networks:
+      - insight_network
+    deploy:
+      replicas: 1
+
+  chromadb:
+    image: chromadb/chroma:latest
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - insight_network
+    deploy:
+      replicas: 1
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    networks:
+      - insight_network
+    deploy:
+      replicas: 1
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    networks:
+      - insight_network
+    deploy:
+      replicas: 1
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - insight_network
+    deploy:
+      replicas: 1
+
+  api:
+    image: sql-insight-engine-api:latest
+    environment:
+      - DATABASE_URL=postgresql://${METADATA_DB_USER:-admin}:${METADATA_DB_PASSWORD:-password}@metadata_store:5432/${METADATA_DB_NAME:-insight_engine}
+      - REDIS_HOST=redis
+      - RABBITMQ_HOST=rabbitmq
+      - CHROMA_HOST=chromadb
+      - MINIO_HOST=minio
+      - MCP_REGISTRY_URL=http://mcp-registry:8010
+      - PYTHONUNBUFFERED=1
+    networks:
+      - insight_network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+        window: 120s
+      update_config:
+        order: stop-first
+        delay: 30s
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.api.rule=Host(`api`)"
+        - "traefik.http.routers.api.entrypoints=web"
+        - "traefik.http.services.api.loadbalancer.server.port=8000"
+
+volumes:
+  metadata_data:
+  external_test_data:
+  chroma_data:
+  minio_data:
+
+networks:
+  insight_network:
+    driver: overlay
+    attachable: true

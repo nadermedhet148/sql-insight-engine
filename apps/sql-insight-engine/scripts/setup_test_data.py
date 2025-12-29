@@ -12,7 +12,9 @@ from core.database.session import SessionLocal as MetadataSessionLocal, engine a
 from account.models import User as MetadataUser, UserDBConfig
 
 # --- Configuration for External Test DB ---
-TEST_DB_URL = os.getenv("EXTERNAL_TEST_DB_URL", "postgresql://test_user:test_password@external_test_db:5432/external_test_db")
+# Use localhost:5433 when running from host machine (5433 is mapped in docker-compose)
+# Use external_test_db:5432 when running inside Docker
+TEST_DB_URL = os.getenv("EXTERNAL_TEST_DB_URL", "postgresql://test_user:test_password@localhost:5433/external_test_db")
 TestBase = declarative_base()
 
 # --- Models for External Test DB ---
