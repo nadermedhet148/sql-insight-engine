@@ -25,7 +25,7 @@ async def register_server(server: MCPServerInfo):
 async def list_servers():
     # Filter out servers not seen in the last 60 seconds (optional)
     current_time = time.time()
-    return [s for s in registry.values() if current_time - s.last_seen < 300]
+    return [s for s in registry.values() if current_time - s.last_seen < 3600]
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8010)

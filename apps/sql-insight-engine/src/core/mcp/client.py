@@ -127,6 +127,20 @@ class DynamicMCPManager:
         for tool_name, (mcp_client, tool_def) in self.tools_map.items():
             def create_tool(name=tool_name, client=mcp_client, definition=tool_def):
                 def tool_wrapper(**kwargs):
+                    # Robust type casting based on annotations
+                    if hasattr(tool_wrapper, "__annotations__"):
+                        for k, v in kwargs.items():
+                            expected_type = tool_wrapper.__annotations__.get(k)
+                            if expected_type and v is not None:
+                                if expected_type is int and isinstance(v, str):
+                                    try: kwargs[k] = int(v)
+                                    except: pass
+                                elif expected_type is float and isinstance(v, (str, int)):
+                                    try: kwargs[k] = float(v)
+                                    except: pass
+                                elif expected_type is bool and isinstance(v, str):
+                                    kwargs[k] = v.lower() in ("true", "1", "yes")
+
                     # Inject context if provided
                     if context:
                         for k, v in context.items():
@@ -164,13 +178,21 @@ class DynamicMCPManager:
                         if context and p_name in context:
                             continue
                             
-                        # Default all to string for Gemini tools compatibility
+                        # Map JSON types to Python types
+                        json_type = p_info.get("type", "string")
+                        py_type = str
+                        if json_type == "integer": py_type = int
+                        elif json_type == "number": py_type = float
+                        elif json_type == "boolean": py_type = bool
+                        elif json_type == "array": py_type = list
+                        elif json_type == "object": py_type = dict
+
                         params.append(inspect.Parameter(
                             p_name,
                             inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                            annotation=str
+                            annotation=py_type
                         ))
-                        tool_annotations[p_name] = str
+                        tool_annotations[p_name] = py_type
                     
                     if params:
                         tool_wrapper.__signature__ = inspect.Signature(params)

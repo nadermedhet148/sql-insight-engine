@@ -11,7 +11,10 @@ from agentic_sql.saga.publisher import SagaPublisher
 from core.gemini_client import GeminiClient
 from core.mcp.client import initialize_mcp, get_discovered_tools
 from account.models import User
-from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_saga_error, get_interaction_history
+from agentic_sql.saga.utils import (
+    sanitize_for_json, update_saga_state, store_saga_error, 
+    get_interaction_history, parse_llm_response, extract_response_metadata
+)
 
 def extract_tables_from_sql(sql: str) -> List[str]:
     import re
@@ -29,6 +32,7 @@ def extract_tables_from_sql(sql: str) -> List[str]:
 def run_agentic_sql_generation(message: QueryInitiatedMessage, db_config_dict: Dict[str, Any]) -> tuple[str, str, str, Dict, List, bool]:
     
     db_url = f"postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}"
+    
     all_tools = get_discovered_tools(message=message, context={"db_url": db_url, "account_id": message.account_id})
     # Generator should NOT have run_query to prevent premature execution
     tools = [t for t in all_tools if t.__name__ != "run_query"]
@@ -64,45 +68,41 @@ def run_agentic_sql_generation(message: QueryInitiatedMessage, db_config_dict: D
     try:
         full_text = response.text or ""
     except (ValueError, AttributeError):
-        full_text = ""
-    
-    if not full_text:
-        print(f"[TRACE] Gemini response has no text, checking for function calls...")
-        pass
+        full_text = str(response)
     
     interaction_history = get_interaction_history(chat)
+    parsed = parse_llm_response(full_text, tags=["DECISION", "REASONING", "SQL"])
+    print(f"[TRACE] Parsed generator response for {message.saga_id}: {parsed}")
 
-    is_out_of_scope = "DECISION: OUT_OF_SCOPE" in full_text or "DECISION: IRRELEVANT" in full_text
+    decision = str(parsed.get("DECISION", "")).upper()
+    reasoning = parsed.get("REASONING", "N/A")
+    sql = parsed.get("SQL", "")
     
-    reasoning = "N/A"
-    if "REASONING:" in full_text:
-        parts = full_text.split("REASONING:")
-        if len(parts) > 1:
-            reasoning = parts[1].split("SQL:")[0].strip()
-
-    sql = ""
-    if "SQL:" in full_text:
-        sql_part = full_text.split("SQL:")[1].split("USED_TABLES:")[0].strip()
-        if sql_part.upper() != "NONE":
-            sql = sql_part
-            
-    sql = sql.replace("```sql", "").replace("```", "").strip()
-    if sql.endswith(";"): sql = sql[:-1]
-
-    # Double check out of scope keywords if decision wasn't explicitly caught
-    out_of_scope_keywords = ["out of your business scope", "out of you bussiness scope", "not related to the", "cannot answer", "missing data", "not related to any available tables", "out of scope"]
-    if not is_out_of_scope and not sql and any(kw in full_text.lower() for kw in out_of_scope_keywords):
+    # 1. Primary check: Explicitly tagged decision
+    is_out_of_scope = "OUT_OF_SCOPE" in decision or "IRRELEVANT" in decision
+    
+    # 2. Secondary check: If SQL is NONE or empty, and it's not RELEVANT, treat as out of scope
+    if not is_out_of_scope and (not sql or sql.upper() == "NONE"):
+        # Most likely out of scope if no SQL was generated
         is_out_of_scope = True
-        if reasoning == "N/A": reasoning = full_text.strip()
-    
-    # Capture usage metadata
-    usage = {}
-    if hasattr(response, "usage_metadata"):
-        usage = {
-            "prompt_token_count": response.usage_metadata.prompt_token_count,
-            "candidates_token_count": response.usage_metadata.candidates_token_count,
-            "total_token_count": response.usage_metadata.total_token_count
-        }
+        if reasoning == "N/A":
+             # Use the whole text as reasoning if we haven't found any
+             reasoning = full_text.strip()
+
+    # 3. Text keywords fallback (in case tags failed completely)
+    out_of_scope_keywords = [
+        "out of your business scope", "out of you bussiness scope", 
+        "not related to the", "cannot answer", "missing data", 
+        "not related to any available tables", "out of scope",
+        "does not exist", "unable to find the table"
+    ]
+    if not is_out_of_scope and any(kw in full_text.lower() for kw in out_of_scope_keywords):
+        # We only force out_of_scope if no SQL was found or if it clearly says it can't do it
+        if not sql or sql.upper() == "NONE" or "cannot answer" in full_text.lower():
+            is_out_of_scope = True
+            if reasoning == "N/A": reasoning = full_text.strip()
+
+    usage = extract_response_metadata(response)
             
     return sql, reasoning, prompt, usage, interaction_history, is_out_of_scope
 

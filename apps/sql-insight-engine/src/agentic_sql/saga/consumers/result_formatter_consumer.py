@@ -17,7 +17,10 @@ from agentic_sql.saga.publisher import SagaPublisher
 from agentic_sql.saga.state_store import get_saga_state_store
 from core.gemini_client import GeminiClient
 from core.mcp.client import get_discovered_tools
-from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_saga_error, get_interaction_history
+from agentic_sql.saga.utils import (
+    sanitize_for_json, update_saga_state, store_saga_error, 
+    get_interaction_history, parse_llm_response, extract_response_metadata
+)
 
 
 
@@ -53,23 +56,13 @@ def run_result_formatting_agentic(message: QueryExecutedMessage) -> tuple[str, s
         try:
             text = response.text or ""
         except (ValueError, AttributeError):
-            text = ""
+            text = str(response)
         
-        formatted_response = ""
-        if "EXECUTIVE SUMMARY:" in text:
-            formatted_response = text.split("EXECUTIVE SUMMARY:")[1].strip()
-        else:
-            formatted_response = text.strip()
-            
-        usage = {}
-        if hasattr(response, "usage_metadata"):
-            usage = {
-                "prompt_token_count": response.usage_metadata.prompt_token_count,
-                "candidates_token_count": response.usage_metadata.candidates_token_count,
-                "total_token_count": response.usage_metadata.total_token_count
-            }
-            
         interaction_history = get_interaction_history(chat)
+        parsed = parse_llm_response(text, tags=["EXECUTIVE SUMMARY"])
+
+        formatted_response = parsed.get("EXECUTIVE SUMMARY", text.strip())
+        usage = extract_response_metadata(response)
             
         return formatted_response, text, usage, prompt, interaction_history
     except Exception as e:

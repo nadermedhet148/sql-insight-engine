@@ -9,7 +9,10 @@ from agentic_sql.saga.messages import (
 from agentic_sql.saga.publisher import SagaPublisher
 from core.gemini_client import GeminiClient
 from core.mcp.client import initialize_mcp, get_discovered_tools
-from agentic_sql.saga.utils import sanitize_for_json, update_saga_state, store_saga_error, get_interaction_history
+from agentic_sql.saga.utils import (
+    sanitize_for_json, update_saga_state, store_saga_error, 
+    get_interaction_history, parse_llm_response, extract_response_metadata
+)
 
 
 
@@ -29,16 +32,16 @@ def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, 
     - Account ID: {message.account_id}
     
     SQL QUERY TO EXECUTE:
-    {message.generated_sql}
+    "{message.generated_sql if message.generated_sql else "NONE"}"
     
     CRITICAL INSTRUCTIONS:
-    1. You MUST call the `run_query(query=...)` tool. do not guess or hallucinate the results.
-    2. The query MUST have a LIMIT of 10 rows for safety unless it already has one.
-    3. If the query is a SELECT statement, call `run_query`.
+    1. If the SQL QUERY TO EXECUTE is empty, "NONE", or looks like a hallucination, do NOT execute it. Report STATUS: FAILED and REASONING: No valid SQL query provided.
+    2. You MUST call the `run_query(query=...)` tool for valid SELECT queries. do not guess or hallucinate the results.
+    3. The query MUST have a LIMIT of 10 rows for safety unless it already has one.
     4. If the query is DDL (CREATE, DROP, ALTER) or DML (INSERT, UPDATE, DELETE), refuse to execute it.
     
     RESPONSE FORMAT:
-    STATUS: [SUCCESS/FAILED]
+    STATUS: [SUCCESS / FAILED]
     REASONING: [Brief explanation of what the query does and why it is safe/unsafe]
     RESULTS: [The raw list of rows from the tool, or the error message]
     """
@@ -55,45 +58,13 @@ def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, 
             # Check if there are tool calls in the response parts
             full_text = str(response)
         
-        # Try to parse as JSON if the model was helpful enough to use it
-        success = False
-        results = ""
-        reasoning = ""
-        
-        # Clean up Markdown blocks
-        clean_text = full_text.replace("```json", "").replace("```", "").strip()
-        
-        try:
-            # Look for a JSON object in the text
-            import re
-            json_match = re.search(r'\{.*\}', clean_text, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group(0))
-                success = data.get("STATUS", "").upper() == "SUCCESS"
-                reasoning = data.get("REASONING", "N/A")
-                results = str(data.get("RESULTS", ""))
-            else:
-                # Fallback to tag-based parsing
-                success = "STATUS: SUCCESS" in full_text.upper()
-                
-                if "RESULTS:" in full_text:
-                    results = full_text.split("RESULTS:")[1].strip()
-                else:
-                    results = full_text.strip()
-                    
-                if "REASONING:" in full_text:
-                    parts = full_text.split("REASONING:")
-                    if "RESULTS:" in parts[1]:
-                        reasoning = parts[1].split("RESULTS:")[0].strip()
-                    else:
-                        reasoning = parts[1].strip()
-        except:
-            # Extreme fallback
-            success = "SUCCESS" in full_text.upper()
-            results = full_text
-            reasoning = "Parsed from raw text"
-            
         interaction_history = get_interaction_history(chat)
+        parsed = parse_llm_response(full_text, tags=["STATUS", "REASONING", "RESULTS"])
+
+        success = parsed.get("STATUS", "").upper() == "SUCCESS"
+        reasoning = parsed.get("REASONING", "N/A")
+        results = str(parsed.get("RESULTS", full_text))
+            
         return success, results, reasoning, interaction_history
     except Exception as e:
         print(f"[SAGA STEP 4] Agentic query execution failed: {e}")

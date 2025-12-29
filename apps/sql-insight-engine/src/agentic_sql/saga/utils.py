@@ -147,3 +147,67 @@ def store_saga_error(message: SagaBaseMessage, error_step: str, error_msg: str,
         SagaPublisher().publish_error(err_event)
     except Exception as e:
         print(f"[SAGA UTIL] Failed to publish error: {e}")
+
+def parse_llm_response(response_text: str, tags: List[str] = None) -> Dict[str, Any]:
+    """
+    Parses an LLM response that might contain JSON or custom tags.
+    """
+    import re
+    result = {}
+    
+    # Clean up Markdown
+    clean_text = response_text.replace("```json", "").replace("```", "").strip()
+    
+    # 1. Try JSON parsing
+    try:
+        # Improved regex to find JSON object
+        json_match = re.search(r'\{(?:[^{}]|\{[^{}]*\})*\}', clean_text, re.DOTALL)
+        if json_match:
+            data = json.loads(json_match.group(0))
+            # Merge JSON data (handling both lowercase and uppercase keys for robustness)
+            for k, v in data.items():
+                result[k.upper()] = v
+                result[k.lower()] = v
+    except:
+        pass
+        
+    # 2. Tag-based parsing (fallback or secondary)
+    if tags:
+        for tag in tags:
+            tag_upper = tag.upper()
+            search_tag = f"{tag_upper}:"
+            if search_tag in clean_text:
+                # Find start of this tag
+                start_p = clean_text.find(search_tag) + len(search_tag)
+                # Find end (next tag or end of string)
+                end_p = len(clean_text)
+                for other_tag in tags:
+                    other_search = f"{other_tag.upper()}:"
+                    other_p = clean_text.find(other_search, start_p)
+                    if other_p != -1 and other_p < end_p:
+                        end_p = other_p
+                
+                val = clean_text[start_p:end_p].strip()
+                # Remove brackets [ ] if they wrap the value
+                if val.startswith("[") and val.endswith("]"):
+                    val = val[1:-1].strip()
+                result[tag_upper] = val
+                result[tag.lower()] = val
+
+    # 3. Specific cleanups
+    if "SQL" in result and isinstance(result["SQL"], str):
+        result["SQL"] = result["SQL"].replace("```sql", "").replace("```", "").strip()
+        if result["SQL"].endswith(";"): result["SQL"] = result["SQL"][:-1]
+        
+    return result
+
+def extract_response_metadata(response) -> Dict[str, Any]:
+    """Extracts usage metadata from Gemini response object"""
+    usage = {}
+    if hasattr(response, "usage_metadata"):
+        usage = {
+            "prompt_token_count": getattr(response.usage_metadata, "prompt_token_count", 0),
+            "candidates_token_count": getattr(response.usage_metadata, "candidates_token_count", 0),
+            "total_token_count": getattr(response.usage_metadata, "total_token_count", 0)
+        }
+    return usage

@@ -155,30 +155,32 @@ app.routes.append(Route("/sse", SSEHandler(), methods=["GET"]))
 app.routes.append(Route("/messages", MessagesHandler(), methods=["POST"]))
 
 async def register_with_registry():
-    """Register this server with the MCP Registry"""
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{REGISTRY_URL}/register",
-                json={
-                    "name": mcp_server.server_name,
-                    "url": SERVER_URL
-                },
-                timeout=5.0
-            )
-            if response.status_code == 200:
-                logger.info(f"Successfully registered with registry: {REGISTRY_URL}")
-            else:
-                logger.error(f"Failed to register with registry: {response.status_code}")
-    except Exception as e:
-        logger.error(f"Error registering with registry: {str(e)}")
+    """Register this server with the MCP Registry periodically"""
+    while True:
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{REGISTRY_URL}/register",
+                    json={
+                        "name": mcp_server.server_name,
+                        "url": SERVER_URL
+                    },
+                    timeout=5.0
+                )
+                if response.status_code == 200:
+                    logger.info(f"Successfully registered with registry: {REGISTRY_URL}")
+                else:
+                    logger.error(f"Failed to register with registry: {response.status_code}")
+        except Exception as e:
+            logger.error(f"Error registering with registry: {str(e)}")
+        
+        # Heartbeat every 2 minutes
+        await asyncio.sleep(120)
 
 @app.on_event("startup")
 async def startup_event():
     # Start registration in the background
     asyncio.create_task(register_with_registry())
-
-# Removed @app.post handlers as they are now registered via add_route
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8002)
