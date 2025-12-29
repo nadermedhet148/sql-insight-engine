@@ -196,8 +196,19 @@ def parse_llm_response(response_text: str, tags: List[str] = None) -> Dict[str, 
 
     # 3. Specific cleanups
     if "SQL" in result and isinstance(result["SQL"], str):
-        result["SQL"] = result["SQL"].replace("```sql", "").replace("```", "").strip()
-        if result["SQL"].endswith(";"): result["SQL"] = result["SQL"][:-1]
+        sql = result["SQL"]
+        # Remove common markdown markers
+        sql = sql.replace("```sql", "").replace("```postgresql", "").replace("```", "").strip()
+        
+        # If it starts with 'sql' (case insensitive) followed by whitespace, remove it
+        if sql.lower().startswith("sql"):
+            sql = sql[3:].strip()
+            
+        # Final cleanup
+        if sql.endswith(";"): 
+            sql = sql[:-1]
+        result["SQL"] = sql.strip()
+        result["sql"] = result["SQL"]
         
     return result
 

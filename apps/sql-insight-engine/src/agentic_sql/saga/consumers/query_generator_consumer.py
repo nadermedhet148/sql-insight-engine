@@ -58,7 +58,7 @@ def run_agentic_sql_generation(message: QueryInitiatedMessage, db_config_dict: D
     RESPONSE FORMAT (STRICT):
     DECISION: [RELEVANT / OUT_OF_SCOPE]
     REASONING: [Your explanation of the decision and the data found]
-    SQL: [The final SQL query if RELEVANT, otherwise NONE]
+    SQL: [The final raw PostgreSQL query (without markdown code blocks or "sql" prefix) if RELEVANT, otherwise NONE]
     """
     print(f"[TRACE] Starting Gemini chat for saga {message.saga_id}")
     chat = agent.start_chat(enable_automatic_function_calling=True)

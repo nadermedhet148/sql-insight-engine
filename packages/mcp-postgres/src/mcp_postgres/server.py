@@ -68,19 +68,7 @@ class PostgresMCPServer:
                         },
                         "required": ["table_name"]
                     }
-                ),
-                Tool(
-                    name="run_query",
-                    description="Run a read-only SQL query on the database",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "query": {"type": "string", "description": "The SQL query to execute"},
-                            "db_url": {"type": "string", "description": "PostgreSQL connection string"}
-                        },
-                        "required": ["query"]
-                    }
-                ),
+                )
             ]
         
         @server.call_tool()
@@ -114,20 +102,6 @@ class PostgresMCPServer:
                     result += f"\nPK: {', '.join(pk.get('constrained_columns', []))}\n"
                     return [TextContent(type="text", text=result)]
                 
-                elif name == "run_query":
-                    query = arguments["query"].strip()
-                    if not query.upper().startswith("SELECT"):
-                        return [TextContent(type="text", text="Error: Only SELECT queries allowed")]
-                    
-                    with engine.connect() as conn:
-                        result = conn.execute(text(query))
-                        columns = list(result.keys())
-                        rows = result.fetchall()
-                        output = "| " + " | ".join(columns) + " |\n| " + " | ".join(["---"] * len(columns)) + " |\n"
-                        for row in rows[:50]:
-                            output += "| " + " | ".join(str(v) for v in row) + " |\n"
-                        return [TextContent(type="text", text=output)]
-
             except Exception as e:
                 logger.exception(f"Error in {name}: {str(e)}")
                 return [TextContent(type="text", text=f"Error: {str(e)}")]

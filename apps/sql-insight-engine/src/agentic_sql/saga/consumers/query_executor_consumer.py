@@ -16,59 +16,70 @@ from agentic_sql.saga.utils import (
 
 
 
-def run_query_agentic(message: QueryGeneratedMessage, db_config_dict: Dict[str, Any]) -> tuple[bool, str, str, List[Dict[str, Any]]]:
-    db_url = f"postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}"
-    all_tools = get_discovered_tools(message=message, context={"db_url": db_url, "account_id": message.account_id})
-    # Executor ONLY needs run_query to avoid hallucinating search or using wrong tools
-    tools = [t for t in all_tools if t.__name__ == "run_query"]
-    print(f"[SAGA STEP 2] Executor for {message.saga_id} discovered {len(all_tools)} tools, using {len(tools)}: {[t.__name__ for t in tools]}")
-    agent = GeminiClient(tools=tools)
-    
-    prompt = f"""
-    You are a Database Operations Agent. Your task is to execute the following SQL query and return the results.
-    
-    ENVIRONMENT CONTEXT:
-    - Database URL: {db_url}
-    - Account ID: {message.account_id}
-    
-    SQL QUERY TO EXECUTE:
-    "{message.generated_sql if message.generated_sql else "NONE"}"
-    
-    CRITICAL INSTRUCTIONS:
-    1. If the SQL QUERY TO EXECUTE is empty, "NONE", or looks like a hallucination, do NOT execute it. Report STATUS: FAILED and REASONING: No valid SQL query provided.
-    2. You MUST call the `run_query(query=...)` tool for valid SELECT queries. do not guess or hallucinate the results.
-    3. The query MUST have a LIMIT of 10 rows for safety unless it already has one.
-    4. If the query is DDL (CREATE, DROP, ALTER) or DML (INSERT, UPDATE, DELETE), refuse to execute it.
-    
-    RESPONSE FORMAT:
-    STATUS: [SUCCESS / FAILED]
-    REASONING: [Brief explanation of what the query does and why it is safe/unsafe]
-    RESULTS: [The raw list of rows from the tool, or the error message]
-    """
-    
-    try:
-        print(f"[TRACE] Starting Gemini chat for saga {message.saga_id}")
-        chat = agent.start_chat(enable_automatic_function_calling=True)
-        print(f"[TRACE] Sending message to Gemini for saga {message.saga_id}")
-        response = chat.send_message(prompt)
-        print(f"[TRACE] Received response from Gemini for saga {message.saga_id}")
-        try:
-            full_text = response.text or ""
-        except (ValueError, AttributeError):
-            # Check if there are tool calls in the response parts
-            full_text = str(response)
-        
-        interaction_history = get_interaction_history(chat)
-        parsed = parse_llm_response(full_text, tags=["STATUS", "REASONING", "RESULTS"])
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
 
-        success = parsed.get("STATUS", "").upper() == "SUCCESS"
-        reasoning = parsed.get("REASONING", "N/A")
-        results = str(parsed.get("RESULTS", full_text))
+def execute_query_native(db_config_dict: Dict[str, Any], sql: str) -> tuple[bool, str, str]:
+    """Execute SQL query directly against the database using SQLAlchemy"""
+    db_url = f"postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}"
+    
+    # Strip whitespace and trailing semicolon for better processing
+    sql = sql.strip()
+    
+    # Remove markers if they slipped through
+    sql = sql.replace("```sql", "").replace("```postgresql", "").replace("```", "").strip()
+    if sql.lower().startswith("sql"):
+        sql = sql[3:].strip()
+        
+    if sql.endswith(';'):
+        sql = sql[:-1]
+        
+    sql_upper = sql.upper()
+    
+    # 1. Critical safety check: Refuse DDL/DML
+    forbidden_keywords = ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "TRUNCATE", "GRANT", "REVOKE"]
+    for kw in forbidden_keywords:
+        # Check for keyword with spaces or at start/end to avoid partial matches
+        if f" {kw} " in f" {sql_upper} ":
+             return False, f"Query contains forbidden DDL/DML keyword: {kw}", "Safety violation"
+    
+    # 2. Must be a SELECT
+    if "SELECT" not in sql_upper:
+        return False, "Only SELECT queries are allowed.", "Not a SELECT query"
+
+    # 3. Safety: Enforce LIMIT 10 if no limit present or if limit is too high
+    # Simple check for LIMIT keyword
+    if "LIMIT" not in sql_upper:
+        sql = f"{sql} LIMIT 10"
+    
+    print(f"[TRACE] Executing native SQL: {sql}")
+
+    try:
+        # Create engine with a short timeout
+        engine = create_engine(db_url, connect_args={'connect_timeout': 5})
+        with engine.connect() as connection:
+            result = connection.execute(text(sql))
             
-        return success, results, reasoning, interaction_history
+            # Fetch all rows
+            rows = result.fetchall()
+            
+            if not rows:
+                return True, "[]", "Query executed successfully but returned no rows"
+            
+            # Format results as JSON list of dicts for the formatter
+            columns = result.keys()
+            formatted_results = []
+            for row in rows:
+                formatted_results.append(dict(zip(columns, row)))
+            
+            return True, json.dumps(formatted_results, indent=2, default=str), f"Successfully executed query and retrieved {len(rows)} rows"
+            
+    except SQLAlchemyError as e:
+        print(f"[SAGA STEP 2] Database error: {str(e)}")
+        return False, str(e), "Database execution error"
     except Exception as e:
-        print(f"[SAGA STEP 4] Agentic query execution failed: {e}")
-        return False, str(e), "Execution error", []
+        print(f"[SAGA STEP 2] Unexpected execution error: {str(e)}")
+        return False, str(e), "Unknown execution error"
 
 from core.infra.consumer import BaseConsumer
 
@@ -88,23 +99,32 @@ def process_query_execution(ch, method, properties, body):
         data = json.loads(body)
         message = message_from_dict(data, QueryGeneratedMessage)
         
-        print(f"\n[SAGA STEP 2] Query Execution (Agentic) - Saga ID: {message.saga_id}")
+        print(f"\n[SAGA STEP 2] Query Execution (Native) - Saga ID: {message.saga_id}")
         
-        # db_config_dict for MCP client
-        db_config_dict = message.db_config
-        
-        # Agentic query execution
-        success, raw_results, reasoning, interaction_history = run_query_agentic(message, db_config_dict)
+        # Verify we have SQL
+        if not message.generated_sql or message.generated_sql.upper() == "NONE":
+             print(f"[SAGA STEP 2] ✗ No valid SQL to execute")
+             store_saga_error(
+                message=message,
+                error_step="execute_query_native",
+                error_msg="No valid SQL query was generated by the previous step.",
+                duration_ms=(time.time() - start_time) * 1000,
+                reasoning="Missing SQL"
+            )
+             ch.basic_ack(delivery_tag=method.delivery_tag)
+             return
+
+        # Execute native SQL
+        success, raw_results, reasoning = execute_query_native(message.db_config, message.generated_sql)
         
         duration_ms = (time.time() - start_time) * 1000
         
         if not success:
-            print(f"[SAGA STEP 2] ✗ Agentic execution failed: {raw_results[:100]}...")
-            print(f"[SAGA STEP 2] Reasoning: {reasoning}")
+            print(f"[SAGA STEP 2] ✗ Native execution failed: {raw_results[:100]}...")
             
             store_saga_error(
                 message=message,
-                error_step="execute_query_agentic",
+                error_step="execute_query_native",
                 error_msg=raw_results,
                 duration_ms=duration_ms,
                 reasoning=reasoning,
@@ -114,7 +134,6 @@ def process_query_execution(ch, method, properties, body):
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
         
-        result_lines = raw_results.split('\n') if raw_results else []
         print(f"[SAGA STEP 2] ✓ Query executed successfully in {duration_ms:.2f}ms")
         
         next_message = QueryExecutedMessage(
@@ -134,16 +153,15 @@ def process_query_execution(ch, method, properties, body):
         next_message._current_tool_calls = message._current_tool_calls.copy()
         message._current_tool_calls = []
         
+        # Add to call stack - no interaction history for native execution
         next_message.add_to_call_stack(
-            step_name="execute_query_agentic",
+            step_name="execute_query_native",
             status="success",
             duration_ms=duration_ms,
-            result_lines=len(result_lines),
             sql=message.generated_sql,
             reasoning=reasoning,
             response=raw_results,
-            tools_used=sanitize_for_json(next_message._current_tool_calls.copy()),
-            interaction_history=interaction_history
+            tools_used=[]
         )
         
         # Publish to next step
@@ -165,7 +183,7 @@ def process_query_execution(ch, method, properties, body):
         
         store_saga_error(
             message=message,
-            error_step="execute_query_agentic",
+            error_step="execute_query_native",
             error_msg=str(e),
             duration_ms=duration_ms
         )
