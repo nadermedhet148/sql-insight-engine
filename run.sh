@@ -26,6 +26,15 @@ echo "Waiting for infrastructure services to start..."
 sleep 15
 
 echo "=== Deployment initiated ==="
-echo "Use 'docker service ls' to check service status"
-echo "Use 'docker stack ps insight' to see running tasks"
-
+echo ""
+echo "Service Status:"
+echo "  docker service ls"
+echo ""
+echo "Running Tasks:"
+echo "  docker stack ps insight"
+echo ""
+echo "Observability Stack:"
+echo "  Grafana:    http://localhost:4000 (admin/admin)"
+echo "  Prometheus: http://localhost:9090"
+echo "  Loki:       http://localhost:3100"
+echo ""

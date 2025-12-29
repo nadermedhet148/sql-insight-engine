@@ -8,8 +8,12 @@ import redis
 import json
 import asyncio
 import httpx
+from prometheus_fastapi_instrumentator import Instrumentator
 
 app = FastAPI(title="MCP Registry")
+
+# Prometheus metrics
+Instrumentator().instrument(app).expose(app)
 
 class MCPServerInfo(BaseModel):
     name: str

@@ -16,3 +16,4 @@ mcp
 redis
 nest-asyncio
 httpx
+prometheus-fastapi-instrumentator

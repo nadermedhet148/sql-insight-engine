@@ -164,11 +164,71 @@ services:
         - "traefik.http.routers.api.entrypoints=web"
         - "traefik.http.services.api.loadbalancer.server.port=8000"
 
+  # Observability Stack
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - insight_network
+    deploy:
+      replicas: 1
+
+  loki:
+    image: grafana/loki:2.9.0
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - insight_network
+    deploy:
+      replicas: 1
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    volumes:
+      - ./monitoring/promtail-config.yml:/etc/promtail/config.yml
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - insight_network
+    deploy:
+      replicas: 1
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "4000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    networks:
+      - insight_network
+    deploy:
+      replicas: 1
+
 volumes:
   metadata_data:
   external_test_data:
   chroma_data:
   minio_data:
+  prometheus_data:
+  loki_data:
+  grafana_data:
 
 networks:
   insight_network:

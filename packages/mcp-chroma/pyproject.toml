@@ -9,7 +9,8 @@ dependencies = [
     "uvicorn",
     "fastapi",
     "httpx",
-    "google-genai"
+    "google-genai",
+    "prometheus-client"
 ]
 
 [build-system]

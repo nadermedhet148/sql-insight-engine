@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY main.py .
 
-RUN pip install fastapi uvicorn pydantic redis httpx
+RUN pip install fastapi uvicorn pydantic redis httpx prometheus-fastapi-instrumentator
 
 EXPOSE 8010
 

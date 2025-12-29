@@ -93,6 +93,10 @@ async def lifespan(app: FastAPI):
     
 app = FastAPI(title="SQL Insight Engine API", lifespan=lifespan)
 
+# Prometheus metrics
+from prometheus_fastapi_instrumentator import Instrumentator
+Instrumentator().instrument(app).expose(app)
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,

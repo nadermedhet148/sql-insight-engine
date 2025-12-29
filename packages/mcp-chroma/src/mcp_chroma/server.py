@@ -14,6 +14,8 @@ from mcp.server.models import InitializationOptions
 import mcp.types as types
 import uvicorn
 import httpx
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from starlette.responses import Response
 
 load_dotenv()
 
@@ -154,9 +156,18 @@ class MessagesHandler:
 app.routes.append(Route("/sse", SSEHandler(), methods=["GET"]))
 app.routes.append(Route("/messages", MessagesHandler(), methods=["POST"]))
 
+# Prometheus metrics
+REQUEST_COUNT = Counter('mcp_chroma_requests_total', 'Total requests', ['method', 'endpoint'])
+REQUEST_LATENCY = Histogram('mcp_chroma_request_duration_seconds', 'Request latency', ['endpoint'])
+
 @app.get("/health")
 async def health():
+    REQUEST_COUNT.labels(method='GET', endpoint='/health').inc()
     return {"status": "healthy", "server": "mcp-chroma"}
+
+@app.get("/metrics")
+async def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 async def register_with_registry():
     """Register this server with the MCP Registry periodically"""
