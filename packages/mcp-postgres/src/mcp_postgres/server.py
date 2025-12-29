@@ -154,6 +154,10 @@ class MessagesHandler:
 app.routes.append(Route("/sse", SSEHandler(), methods=["GET"]))
 app.routes.append(Route("/messages", MessagesHandler(), methods=["POST"]))
 
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "server": "mcp-postgres"}
+
 async def register_with_registry():
     """Register this server with the MCP Registry periodically"""
     while True:

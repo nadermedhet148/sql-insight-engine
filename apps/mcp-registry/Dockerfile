@@ -4,7 +4,7 @@ WORKDIR /app
 
 COPY main.py .
 
-RUN pip install fastapi uvicorn pydantic
+RUN pip install fastapi uvicorn pydantic redis httpx
 
 EXPOSE 8010
 

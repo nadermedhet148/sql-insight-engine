@@ -219,16 +219,15 @@ async def initialize_mcp():
     await mcp_manager.refresh_tools()
 
 def get_discovered_tools(message: Any = None, context: Dict[str, Any] = None) -> List[Callable]:
-    """Helper to get tools from the global manager"""
-    if not mcp_manager.tools_map:
-        print("[DEBUG] No tools in map, attempting proactive refresh...")
-        try:
-            # We use a simplified refresh if we're already in a loop
-            import nest_asyncio
-            nest_asyncio.apply()
-            asyncio.run(mcp_manager.refresh_tools(retries=1, delay=0.5))
-        except Exception as e:
-            print(f"[DEBUG] Proactive refresh failed: {e}")
+    """Helper to get tools from the global manager - refreshed on every call"""
+    print("[DEBUG] Proactive MCP tool refresh for request...")
+    try:
+        # We use a simplified refresh if we're already in a loop
+        import nest_asyncio
+        nest_asyncio.apply()
+        asyncio.run(mcp_manager.refresh_tools(retries=1, delay=0.5))
+    except Exception as e:
+        print(f"[DEBUG] Proactive refresh failed: {e}")
     
     return mcp_manager.get_gemini_tools(message, context)
 

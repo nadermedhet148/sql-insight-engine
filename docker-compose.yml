@@ -9,6 +9,8 @@ services:
       - "8010:8010"
     networks:
       - insight_network
+    environment:
+      - REDIS_HOST=redis
 
   metadata_store:
     image: postgres:15
