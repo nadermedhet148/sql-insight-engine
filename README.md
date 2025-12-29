@@ -51,79 +51,170 @@ graph TD
     Store -.->|Final Insight| User
 ```
 
-### Saga Pattern Workflow
+---
+
+## 🔧 MCP Registry & Service Discovery
+
+The system uses a **centralized MCP Registry** for dynamic service discovery. All MCP services (PostgreSQL tools, ChromaDB tools) register themselves with the registry on startup.
+
+### MCP Registry Features
+- **Redis-backed storage**: Service registrations persist across restarts
+- **Health monitoring**: Background task checks service health every 30 seconds
+- **Automatic cleanup**: Stale services (not seen for 1 hour) are removed
+- **Status tracking**: Each service has a health status (`healthy`, `unhealthy`, `error`)
+
+### Architecture
 ```mermaid
-sequenceDiagram
-    participant User as User/Frontend
-    participant API as FastAPI
-    participant SS as Redis (State Store)
-    participant RMQ as RabbitMQ
-    participant G as Step 2: Merged Check & Generator
-    participant E as Step 3: Query Executor
-    participant F as Step 4: Result Formatter
-    
-    User->>API: POST /query/async
-    API->>SS: Mark Saga as Pending
-    API->>RMQ: Publish QueryInitiatedMessage
-    API-->>User: Return saga_id
-    
-    Note over G,F: Asynchronous Processing
-    
-    RMQ->>G: Consume Message
-    G->>G: Agentic Loop (Discovery + Generate SQL)
-    G->>SS: Update State (SQL + Call Stack)
-    G->>RMQ: Publish QueryGeneratedMessage
-    
-    RMQ->>E: Consume Message
-    E->>E: Execute SQL via MCP Tool
-    E->>SS: Update State (Raw Results)
-    E->>RMQ: Publish QueryExecutedMessage
-    
-    RMQ->>F: Consume Message
-    F->>F: Agentic Loop (Executive Formatting)
-    F->>SS: Mark as Completed (Final Result)
-    
-    loop Polling
-        User->>API: GET /query/status/{saga_id}
-        API->>SS: Fetch Current State
-        SS-->>API: Current Data
-        API-->>User: Status + Results (if done)
+graph LR
+    subgraph MCP_Services
+        P1[mcp-postgres:8001]
+        P2[mcp-postgres:8001]
+        P3[mcp-postgres:8001]
+        C1[mcp-chroma:8002]
+        C2[mcp-chroma:8002]
+        C3[mcp-chroma:8002]
     end
+    
+    subgraph Registry_Layer
+        R1[mcp-registry:8010]
+        R2[mcp-registry:8010]
+        Redis[(Redis)]
+    end
+    
+    P1 & P2 & P3 --> R1
+    C1 & C2 & C3 --> R1
+    R1 & R2 --> Redis
+    
+    API[API Server] --> R1
+    API --> R2
 ```
+
+### Registry Endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/register` | POST | Register an MCP server |
+| `/servers` | GET | List all healthy servers |
+| `/health` | GET | Check registry + Redis health |
+
+---
+
+## 🏢 Infrastructure Setup
+
+### Services Overview
+| Service | Port | Description |
+|---------|------|-------------|
+| `api` | 8001 | Main FastAPI application |
+| `mcp-registry` | 8010 | Service discovery registry |
+| `mcp-postgres` | 8011 | PostgreSQL MCP tools |
+| `mcp-chroma` | 8012 | ChromaDB MCP tools |
+| `metadata_store` | 5432 | Internal metadata PostgreSQL |
+| `external_test_db` | 5433 | External test database |
+| `rabbitmq` | 5672/15672 | Message queue |
+| `redis` | 6379 | State store & registry storage |
+| `chromadb` | 8000 | Vector database |
+| `minio` | 9000/9001 | Object storage |
+
+### Docker Networks
+- **`sql-insight-engine_insight_network`**: Bridge network for docker-compose
+- **`insight_insight_network`**: Overlay network for Docker Swarm
 
 ---
 
 ## 🚀 Getting Started
 
-### 1. Requirements
+### Requirements
 - Docker & Docker Compose
 - Python 3.11+ (for local development)
 - Google Gemini API Key
 
-### 2. Running with Docker (Recommended)
-The easiest way to run the entire stack (API, Consumers, Redis, RabbitMQ, PostgreSQL, ChromaDB) is via Docker Compose:
-
+### Environment Variables
+Create a `.env` file in the project root:
 ```bash
-docker compose up --build
-```
+# Gemini
+GEMINI_API_KEY=your_api_key
 
-### 3. Local Development
+# Metadata Database
+METADATA_DB_USER=admin
+METADATA_DB_PASSWORD=password
+METADATA_DB_NAME=insight_engine
 
-#### Install Dependencies
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+# Test Database
+TEST_DB_USER=test_user
+TEST_DB_PASSWORD=test_password
+TEST_DB_NAME=external_test_db
+
+# RabbitMQ
+RABBITMQ_USER=guest
+RABBITMQ_PASSWORD=guest
+
+# MinIO
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=minioadmin
 ```
 
 ---
 
-## 🗄️ Database Migrations
+## 🏃 How to Run
 
+### Option 1: Docker Compose (Development)
+The easiest way to run the entire stack:
+
+```bash
+# Start all services
+docker compose up --build
+
+# Or start in detached mode
+docker compose up -d --build
+```
+
+### Option 2: Docker Swarm (Production/Scaling)
+For running with replicas and load balancing:
+
+```bash
+# Run the deployment script
+./run.sh
+```
+
+This will:
+1. Initialize Docker Swarm if not already active
+2. Build all images
+3. Deploy the stack with Traefik load balancer
+4. Create replicas: 3x mcp-postgres, 3x mcp-chroma, 2x mcp-registry
+
+### Useful Commands
+
+```bash
+# Rebuild and restart API only
+./rebuild_api.sh
+
+# Check service status (Swarm)
+docker service ls
+
+# View API logs
+docker logs -f api
+
+# Check MCP registry
+curl http://localhost:8010/servers
+
+# Setup test data
+python apps/sql-insight-engine/scripts/setup_test_data.py
+```
+
+---
+
+## 🗄️ Database Configuration
+
+### Connecting to External Databases
+When configuring a user's database connection:
+
+| Context | Host | Port |
+|---------|------|------|
+| From inside Docker | `external_test_db` | `5432` |
+| From host machine | `localhost` | `5433` |
+| From Docker via host | `host.docker.internal` | `5433` |
+
+### Database Migrations
 We use **Alembic** to manage database schema changes for the Metadata Database.
-
-### Running Migrations
-If you are running the project locally and want to sync your database:
 
 ```bash
 # Set your database URL (if different from default)
@@ -131,16 +222,30 @@ export DATABASE_URL=postgresql://admin:password@localhost:5432/insight_engine
 
 # Upgrade to the latest version
 alembic upgrade head
-```
 
-### Creating New Migrations
-After modifying models in `src/account/models.py`, generate a new migration script:
-
-```bash
+# Create new migration
 alembic revision --autogenerate -m "describe your changes"
-```
 
-### Viewing History
-```bash
+# View history
 alembic history --verbose
 ```
+
+---
+
+## 🧪 Testing
+
+### Setup Test Database
+```bash
+source venv/bin/activate
+python apps/sql-insight-engine/scripts/setup_test_data.py
+```
+
+This creates:
+- 100 users
+- 1,000 products
+- 10,000 orders
+
+### Query the System
+1. Open the UI: `python apps/sql-insight-engine/serve_ui.py`
+2. Create a user and configure database connection
+3. Ask questions like: "What are my top 5 customers by total order amount?"
