@@ -8,6 +8,7 @@ This is the final step in the saga.
 import asyncio
 import json
 import time
+import socket
 from typing import Dict, Any, List
 from agentic_sql.saga.messages import (
     QueryExecutedMessage, ResultFormattedMessage,
@@ -20,6 +21,10 @@ from core.mcp.client import get_discovered_tools
 from agentic_sql.saga.utils import (
     sanitize_for_json, update_saga_state, store_saga_error, 
     get_interaction_history, parse_llm_response, extract_response_metadata
+)
+from agentic_sql.saga.consumers.metrics import (
+    INSTANCE_ID, SAGA_CONSUMER_MESSAGES, SAGA_CONSUMER_DURATION,
+    LLM_TOKENS, LLM_REQUESTS
 )
 
 
@@ -95,6 +100,12 @@ def process_result_formatting(ch, method, properties, body):
         
         duration_ms = (time.time() - start_time) * 1000
         
+        # Record LLM metrics
+        LLM_REQUESTS.labels(consumer='result_formatter', model='gemini').inc()
+        if llm_usage:
+            LLM_TOKENS.labels(consumer='result_formatter', type='input').inc(llm_usage.get('input_tokens', 0))
+            LLM_TOKENS.labels(consumer='result_formatter', type='output').inc(llm_usage.get('output_tokens', 0))
+        
         print(f"[SAGA STEP 3] Step Token Usage: {llm_usage}")
         print(f"[SAGA STEP 3] ✓ Results formatted successfully in {duration_ms:.2f}ms")
         
@@ -154,11 +165,19 @@ def process_result_formatting(ch, method, properties, body):
         
         update_saga_state(message.saga_id, result_dict, status="completed")
         
+        # Record success metrics
+        SAGA_CONSUMER_MESSAGES.labels(consumer='result_formatter', status='success', instance=INSTANCE_ID).inc()
+        SAGA_CONSUMER_DURATION.labels(consumer='result_formatter').observe(duration_ms / 1000)
+        
         ch.basic_ack(delivery_tag=method.delivery_tag)
         
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
         print(f"[SAGA STEP 3] ✗ Error: {str(e)}")
+        
+        # Record error metrics
+        SAGA_CONSUMER_MESSAGES.labels(consumer='result_formatter', status='error', instance=INSTANCE_ID).inc()
+        SAGA_CONSUMER_DURATION.labels(consumer='result_formatter').observe(duration_ms / 1000)
         
         store_saga_error(
             message=message,

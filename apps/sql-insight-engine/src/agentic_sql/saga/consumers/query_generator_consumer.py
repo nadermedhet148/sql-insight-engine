@@ -2,6 +2,7 @@ import asyncio
 import pika
 import json
 import time
+import socket
 from typing import List, Dict, Any
 from agentic_sql.saga.messages import (
     QueryInitiatedMessage, QueryGeneratedMessage,
@@ -14,6 +15,10 @@ from account.models import User
 from agentic_sql.saga.utils import (
     sanitize_for_json, update_saga_state, store_saga_error, 
     get_interaction_history, parse_llm_response, extract_response_metadata
+)
+from agentic_sql.saga.consumers.metrics import (
+    INSTANCE_ID, SAGA_CONSUMER_MESSAGES, SAGA_CONSUMER_DURATION,
+    LLM_TOKENS, LLM_TOOL_CALLS, LLM_REQUESTS
 )
 
 def extract_tables_from_sql(sql: str) -> List[str]:
@@ -148,9 +153,23 @@ def process_query_generation(ch, method, properties, body):
 
         generated_sql, llm_reasoning, llm_prompt, llm_usage, interaction_history, is_out_of_scope = run_agentic_sql_generation(message, db_config_dict)
         
+        # Record LLM metrics
+        LLM_REQUESTS.labels(consumer='query_generator', model='gemini').inc()
+        if llm_usage:
+            LLM_TOKENS.labels(consumer='query_generator', type='input').inc(llm_usage.get('input_tokens', 0))
+            LLM_TOKENS.labels(consumer='query_generator', type='output').inc(llm_usage.get('output_tokens', 0))
+            tool_count = llm_usage.get('tool_calls', 0)
+            if tool_count:
+                LLM_TOOL_CALLS.labels(consumer='query_generator').inc(tool_count)
+        
         if is_out_of_scope:
             duration_ms = (time.time() - start_time) * 1000
+            duration_sec = duration_ms / 1000
             print(f"[SAGA STEP 1] 🛑 Question is OUT OF SCOPE: {llm_reasoning[:100]}...")
+            
+            # Record metrics
+            SAGA_CONSUMER_MESSAGES.labels(consumer='query_generator', status='out_of_scope', instance=INSTANCE_ID).inc()
+            SAGA_CONSUMER_DURATION.labels(consumer='query_generator').observe(duration_sec)
             
             store_saga_error(
                 message=message,
@@ -166,6 +185,7 @@ def process_query_generation(ch, method, properties, body):
             return
         
         duration_ms = (time.time() - start_time) * 1000
+        duration_sec = duration_ms / 1000
         
         next_message = QueryGeneratedMessage(
             saga_id=message.saga_id,
@@ -200,6 +220,10 @@ def process_query_generation(ch, method, properties, body):
         print(f"[SAGA STEP 1] Token Usage: {llm_usage}")
         print(f"[SAGA STEP 1] ✓ SQL generated in {duration_ms:.2f}ms")
         
+        # Record success metrics
+        SAGA_CONSUMER_MESSAGES.labels(consumer='query_generator', status='success', instance=INSTANCE_ID).inc()
+        SAGA_CONSUMER_DURATION.labels(consumer='query_generator').observe(duration_sec)
+        
         publisher = SagaPublisher()
         publisher.publish_query_execution(next_message)
         
@@ -209,7 +233,12 @@ def process_query_generation(ch, method, properties, body):
         
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
+        duration_sec = duration_ms / 1000
         print(f"[SAGA STEP 1] ✗ Agentic Error: {str(e)}")
+        
+        # Record error metrics
+        SAGA_CONSUMER_MESSAGES.labels(consumer='query_generator', status='error', instance=INSTANCE_ID).inc()
+        SAGA_CONSUMER_DURATION.labels(consumer='query_generator').observe(duration_sec)
         
         store_saga_error(
             message=message,

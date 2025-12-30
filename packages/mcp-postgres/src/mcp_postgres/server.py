@@ -13,6 +13,8 @@ from mcp.server.models import InitializationOptions
 import mcp.types as types
 import uvicorn
 import httpx
+import socket
+import time
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from starlette.responses import Response
 
@@ -20,7 +22,20 @@ load_dotenv()
 
 REGISTRY_URL = os.getenv("MCP_REGISTRY_URL", "http://mcp-registry:8010")
 SERVER_URL = os.getenv("MCP_SERVER_URL", "http://mcp-postgres:8001/sse")
+INSTANCE_ID = os.getenv("HOSTNAME", socket.gethostname())
 
+# MCP Tool Metrics
+MCP_TOOL_CALLS = Counter(
+    'mcp_tool_calls_total',
+    'Total MCP tool calls',
+    ['tool_name', 'service', 'instance', 'status']
+)
+MCP_TOOL_DURATION = Histogram(
+    'mcp_tool_duration_seconds',
+    'MCP tool execution time',
+    ['tool_name', 'service'],
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+)
 
 # Configure logging to stderr
 logging.basicConfig(
@@ -74,11 +89,15 @@ class PostgresMCPServer:
         
         @server.call_tool()
         async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+            start_time = time.time()
+            status = "success"
+            
             db_url = arguments.get("db_url")
             if not db_url:
                 db_url = os.getenv("MCP_DB_URL") # Fallback
             
             if not db_url:
+                MCP_TOOL_CALLS.labels(tool_name=name, service='mcp-postgres', instance=INSTANCE_ID, status='error').inc()
                 return [TextContent(type="text", text="Error: No db_url provided and MCP_DB_URL not set")]
 
             engine = self._get_engine(db_url)
@@ -88,7 +107,7 @@ class PostgresMCPServer:
                 if name == "list_tables":
                     schema = arguments.get("schema") or "public"
                     tables = inspector.get_table_names(schema=schema)
-                    return [TextContent(type="text", text=f"Tables:\n" + "\n".join(f"- {t}" for t in tables))]
+                    result = [TextContent(type="text", text=f"Tables:\n" + "\n".join(f"- {t}" for t in tables))]
                 
                 elif name == "describe_table":
                     table_name = arguments["table_name"]
@@ -97,17 +116,26 @@ class PostgresMCPServer:
                     columns = inspector.get_columns(table_name, schema=schema)
                     pk = inspector.get_pk_constraint(table_name, schema=schema)
                     
-                    result = f"## Table: {table_name}\n\n### Columns:\n"
+                    text = f"## Table: {table_name}\n\n### Columns:\n"
                     for col in columns:
-                        result += f"- {col['name']}: {col['type']}\n"
-                    result += f"\nPK: {', '.join(pk.get('constrained_columns', []))}\n"
-                    return [TextContent(type="text", text=result)]
+                        text += f"- {col['name']}: {col['type']}\n"
+                    text += f"\nPK: {', '.join(pk.get('constrained_columns', []))}\n"
+                    result = [TextContent(type="text", text=text)]
+                else:
+                    result = [TextContent(type="text", text=f"Unknown tool: {name}")]
+                    status = "unknown"
                 
             except Exception as e:
                 logger.exception(f"Error in {name}: {str(e)}")
-                return [TextContent(type="text", text=f"Error: {str(e)}")]
-
-            return [TextContent(type="text", text=f"Unknown tool: {name}")]
+                status = "error"
+                result = [TextContent(type="text", text=f"Error: {str(e)}")]
+            
+            finally:
+                duration = time.time() - start_time
+                MCP_TOOL_CALLS.labels(tool_name=name, service='mcp-postgres', instance=INSTANCE_ID, status=status).inc()
+                MCP_TOOL_DURATION.labels(tool_name=name, service='mcp-postgres').observe(duration)
+            
+            return result
 
         return server
 

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+import socket
 from typing import Dict, Any, List
 from agentic_sql.saga.messages import (
     QueryGeneratedMessage, QueryExecutedMessage,
@@ -12,6 +13,9 @@ from core.mcp.client import initialize_mcp, get_discovered_tools
 from agentic_sql.saga.utils import (
     sanitize_for_json, update_saga_state, store_saga_error, 
     get_interaction_history, parse_llm_response, extract_response_metadata
+)
+from agentic_sql.saga.consumers.metrics import (
+    INSTANCE_ID, SAGA_CONSUMER_MESSAGES, SAGA_CONSUMER_DURATION
 )
 
 
@@ -122,6 +126,10 @@ def process_query_execution(ch, method, properties, body):
         if not success:
             print(f"[SAGA STEP 2] ✗ Native execution failed: {raw_results[:100]}...")
             
+            # Record error metrics
+            SAGA_CONSUMER_MESSAGES.labels(consumer='query_executor', status='error', instance=INSTANCE_ID).inc()
+            SAGA_CONSUMER_DURATION.labels(consumer='query_executor').observe(duration_ms / 1000)
+            
             store_saga_error(
                 message=message,
                 error_step="execute_query_native",
@@ -175,11 +183,19 @@ def process_query_execution(ch, method, properties, body):
             "raw_results": raw_results
         })
         
+        # Record success metrics
+        SAGA_CONSUMER_MESSAGES.labels(consumer='query_executor', status='success', instance=INSTANCE_ID).inc()
+        SAGA_CONSUMER_DURATION.labels(consumer='query_executor').observe(duration_ms / 1000)
+        
         ch.basic_ack(delivery_tag=method.delivery_tag)
         
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
         print(f"[SAGA STEP 2] ✗ Error: {str(e)}")
+        
+        # Record error metrics
+        SAGA_CONSUMER_MESSAGES.labels(consumer='query_executor', status='error', instance=INSTANCE_ID).inc()
+        SAGA_CONSUMER_DURATION.labels(consumer='query_executor').observe(duration_ms / 1000)
         
         store_saga_error(
             message=message,

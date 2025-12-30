@@ -14,6 +14,8 @@ from mcp.server.models import InitializationOptions
 import mcp.types as types
 import uvicorn
 import httpx
+import socket
+import time as time_module
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from starlette.responses import Response
 
@@ -21,7 +23,20 @@ load_dotenv()
 
 REGISTRY_URL = os.getenv("MCP_REGISTRY_URL", "http://mcp-registry:8010")
 SERVER_URL = os.getenv("MCP_SERVER_URL", "http://mcp-chroma:8002/sse")
+INSTANCE_ID = os.getenv("HOSTNAME", socket.gethostname())
 
+# MCP Tool Metrics
+MCP_TOOL_CALLS = Counter(
+    'mcp_tool_calls_total',
+    'Total MCP tool calls',
+    ['tool_name', 'service', 'instance', 'status']
+)
+MCP_TOOL_DURATION = Histogram(
+    'mcp_tool_duration_seconds',
+    'MCP tool execution time',
+    ['tool_name', 'service'],
+    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+)
 
 # Configure logging to stderr
 logging.basicConfig(
@@ -80,12 +95,15 @@ class ChromaMCPServer:
 
         @server.call_tool()
         async def call_tool(name: str, arguments: dict) -> list[TextContent]:
-            if name == "search_relevant_schema":
-                query = arguments["query"]
-                account_id = str(arguments["account_id"])
-                n_results = int(arguments.get("n_results", 2))
-                
-                try:
+            start_time = time_module.time()
+            status = "success"
+            
+            try:
+                if name == "search_relevant_schema":
+                    query = arguments["query"]
+                    account_id = str(arguments["account_id"])
+                    n_results = int(arguments.get("n_results", 2))
+                    
                     # 1. Get embedding
                     embedding = await self._get_embedding_from_mcp(query)
                     
@@ -99,17 +117,26 @@ class ChromaMCPServer:
                     )
                     
                     if not results or not results.get('documents') or not results['documents'][0]:
-                        return [TextContent(type="text", text="No relevant schema found.")]
+                        result = [TextContent(type="text", text="No relevant schema found.")]
+                    else:
+                        docs = results['documents'][0]
+                        formatted = "# Relevant Schema\n\n" + "\n".join(f"- {d}" for d in docs)
+                        result = [TextContent(type="text", text=formatted)]
+                else:
+                    result = [TextContent(type="text", text=f"Unknown tool: {name}")]
+                    status = "unknown"
                     
-                    docs = results['documents'][0]
-                    formatted = "# Relevant Schema\n\n" + "\n".join(f"- {d}" for d in docs)
-                    return [TextContent(type="text", text=formatted)]
-                    
-                except Exception as e:
-                    logger.exception(f"Error in chroma search: {e}")
-                    return [TextContent(type="text", text=f"Error: {str(e)}")]
+            except Exception as e:
+                logger.exception(f"Error in chroma search: {e}")
+                status = "error"
+                result = [TextContent(type="text", text=f"Error: {str(e)}")]
             
-            return [TextContent(type="text", text=f"Unknown tool: {name}")]
+            finally:
+                duration = time_module.time() - start_time
+                MCP_TOOL_CALLS.labels(tool_name=name, service='mcp-chroma', instance=INSTANCE_ID, status=status).inc()
+                MCP_TOOL_DURATION.labels(tool_name=name, service='mcp-chroma').observe(duration)
+            
+            return result
 
         return server
 
