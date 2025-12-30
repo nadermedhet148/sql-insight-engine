@@ -55,27 +55,57 @@ class SagaPublisher:
         for queue in queues:
             self.channel.queue_declare(queue=queue, durable=True)
     
+    def _ensure_connection(self):
+        """Ensure we have a valid connection and channel"""
+        if self.connection is None or self.connection.is_closed:
+            self.connect()
+        elif self.channel is None or self.channel.is_closed:
+            self.channel = self.connection.channel()
+            self._declare_queues()
+    
     def publish(self, queue: str, message: SagaBaseMessage):
         """Publish message to specified queue"""
-        if not self.channel:
-            self.connect()
+        self._ensure_connection()
         
         message_body = message_to_json(message)
         
-        self.channel.basic_publish(
-            exchange='',
-            routing_key=queue,
-            body=message_body,
-            properties=pika.BasicProperties(
-                delivery_mode=2,  # Make message persistent
-                content_type='application/json',
-                headers={
-                    'saga_id': message.saga_id,
-                    'user_id': str(message.user_id),
-                    'account_id': message.account_id
-                }
+        try:
+            self.channel.basic_publish(
+                exchange='',
+                routing_key=queue,
+                body=message_body,
+                properties=pika.BasicProperties(
+                    delivery_mode=2,  # Make message persistent
+                    content_type='application/json',
+                    headers={
+                        'saga_id': message.saga_id,
+                        'user_id': str(message.user_id),
+                        'account_id': message.account_id
+                    }
+                )
             )
-        )
+        except (pika.exceptions.ChannelClosedByBroker, 
+                pika.exceptions.ChannelWrongStateError,
+                pika.exceptions.StreamLostError) as e:
+            print(f"[SAGA PUBLISHER] Channel error, reconnecting: {e}")
+            self.connection = None
+            self.channel = None
+            self._ensure_connection()
+            # Retry once
+            self.channel.basic_publish(
+                exchange='',
+                routing_key=queue,
+                body=message_body,
+                properties=pika.BasicProperties(
+                    delivery_mode=2,
+                    content_type='application/json',
+                    headers={
+                        'saga_id': message.saga_id,
+                        'user_id': str(message.user_id),
+                        'account_id': message.account_id
+                    }
+                )
+            )
         
         print(f"[SAGA PUBLISHER] Published to '{queue}' - Saga ID: {message.saga_id}")
     
