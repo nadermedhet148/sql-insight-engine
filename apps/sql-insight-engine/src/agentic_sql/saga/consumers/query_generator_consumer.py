@@ -156,8 +156,8 @@ def process_query_generation(ch, method, properties, body):
         # Record LLM metrics
         LLM_REQUESTS.labels(consumer='query_generator', model='gemini').inc()
         if llm_usage:
-            LLM_TOKENS.labels(consumer='query_generator', type='input').inc(llm_usage.get('input_tokens', 0))
-            LLM_TOKENS.labels(consumer='query_generator', type='output').inc(llm_usage.get('output_tokens', 0))
+            LLM_TOKENS.labels(consumer='query_generator', type='input').inc(llm_usage.get('prompt_token_count', 0))
+            LLM_TOKENS.labels(consumer='query_generator', type='output').inc(llm_usage.get('candidates_token_count', 0))
             tool_count = llm_usage.get('tool_calls', 0)
             if tool_count:
                 LLM_TOOL_CALLS.labels(consumer='query_generator').inc(tool_count)

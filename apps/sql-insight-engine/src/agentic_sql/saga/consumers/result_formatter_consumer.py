@@ -103,8 +103,8 @@ def process_result_formatting(ch, method, properties, body):
         # Record LLM metrics
         LLM_REQUESTS.labels(consumer='result_formatter', model='gemini').inc()
         if llm_usage:
-            LLM_TOKENS.labels(consumer='result_formatter', type='input').inc(llm_usage.get('input_tokens', 0))
-            LLM_TOKENS.labels(consumer='result_formatter', type='output').inc(llm_usage.get('output_tokens', 0))
+            LLM_TOKENS.labels(consumer='result_formatter', type='input').inc(llm_usage.get('prompt_token_count', 0))
+            LLM_TOKENS.labels(consumer='result_formatter', type='output').inc(llm_usage.get('candidates_token_count', 0))
         
         print(f"[SAGA STEP 3] Step Token Usage: {llm_usage}")
         print(f"[SAGA STEP 3] ✓ Results formatted successfully in {duration_ms:.2f}ms")
