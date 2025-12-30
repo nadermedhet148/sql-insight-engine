@@ -726,8 +726,8 @@
                         "type": "prometheus",
                         "uid": "prometheus"
                     },
-                    "expr": "sum by (exported_instance, service) (increase(mcp_tool_calls_total[5m]))",
-                    "legendFormat": "{{service}} - {{exported_instance}}",
+                    "expr": "sum by (instance, service) (increase(mcp_tool_calls_total[5m]))",
+                    "legendFormat": "{{service}} - {{instance}}",
                     "refId": "A"
                 }
             ],

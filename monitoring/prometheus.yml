@@ -7,22 +7,36 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
+  # Use DNS service discovery to scrape all replicas in Docker Swarm
+  # 'tasks.service-name' resolves to all container IPs for that service
   - job_name: 'api'
-    static_configs:
-      - targets: ['api:8000']
+    dns_sd_configs:
+      - names:
+          - 'tasks.api'
+        type: 'A'
+        port: 8000
     metrics_path: /metrics
 
   - job_name: 'mcp-registry'
-    static_configs:
-      - targets: ['mcp-registry:8010']
+    dns_sd_configs:
+      - names:
+          - 'tasks.mcp-registry'
+        type: 'A'
+        port: 8010
     metrics_path: /metrics
 
   - job_name: 'mcp-postgres'
-    static_configs:
-      - targets: ['mcp-postgres:8001']
+    dns_sd_configs:
+      - names:
+          - 'tasks.mcp-postgres'
+        type: 'A'
+        port: 8001
     metrics_path: /metrics
 
   - job_name: 'mcp-chroma'
-    static_configs:
-      - targets: ['mcp-chroma:8002']
+    dns_sd_configs:
+      - names:
+          - 'tasks.mcp-chroma'
+        type: 'A'
+        port: 8002
     metrics_path: /metrics
