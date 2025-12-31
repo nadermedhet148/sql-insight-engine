@@ -12,8 +12,8 @@ from dataclasses import dataclass
 from typing import List
 
 # Configuration
-API_BASE_URL = "http://localhost:8001"
-USER_ID = 18  # User ID for account 'testxxxxxwwq'
+API_BASE_URL = "http://localhost:8005"
+USER_ID = 5  # User ID for account 'testxxxxxwwq'
 QUERY = "What is my total revenue?"
 TOTAL_REQUESTS = 30
 DELAY_BETWEEN_REQUESTS = 0.1  # seconds

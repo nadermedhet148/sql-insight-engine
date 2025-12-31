@@ -190,3 +190,85 @@ spec:
     {{- include "sql-insight-engine.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: chromadb
 {{- end }}
+---
+{{- if .Values.minio.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-minio
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  serviceName: {{ include "sql-insight-engine.fullname" . }}-minio
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "sql-insight-engine.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: minio
+  template:
+    metadata:
+      labels:
+        {{- include "sql-insight-engine.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: minio
+    spec:
+      containers:
+      - name: minio
+        image: "{{ .Values.minio.image.repository }}:{{ .Values.minio.image.tag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        args:
+        - server
+        - /data
+        - --console-address
+        - :9001
+        env:
+        - name: MINIO_ROOT_USER
+          value: {{ .Values.minio.env.rootUser }}
+        - name: MINIO_ROOT_PASSWORD
+          value: {{ .Values.minio.env.rootPassword }}
+        ports:
+        - name: api
+          containerPort: {{ .Values.minio.service.port }}
+        - name: console
+          containerPort: {{ .Values.minio.service.consolePort }}
+        volumeMounts:
+        - name: data
+          mountPath: /data
+  {{- if .Values.minio.persistence.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: {{ .Values.global.storageClass }}
+      resources:
+        requests:
+          storage: {{ .Values.minio.persistence.size }}
+  {{- else }}
+      volumes:
+      - name: data
+        emptyDir: {}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-minio
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+spec:
+  type: ClusterIP
+  ports:
+  - port: {{ .Values.minio.service.port }}
+    targetPort: api
+    protocol: TCP
+    name: api
+  - port: {{ .Values.minio.service.consolePort }}
+    targetPort: console
+    protocol: TCP
+    name: console
+  selector:
+    {{- include "sql-insight-engine.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: minio
+{{- end }}

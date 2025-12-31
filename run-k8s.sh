@@ -53,6 +53,8 @@ echo "Configuring Docker environment..."
 # Build Docker images
 echo "Building Docker images..."
 docker compose build
+echo "Building UI image..."
+docker build -t sql-insight-engine-ui:latest ./apps/sql-insight-engine/ui
 
 # Tag images for Kubernetes
 echo "Tagging images..."
@@ -71,6 +73,8 @@ echo "  - Importing sql-insight-engine-mcp-chroma..."
 docker save sql-insight-engine-mcp-chroma:latest | sudo k3s ctr images import -
 echo "  - Importing sql-insight-engine-mcp-registry..."
 docker save sql-insight-engine-mcp-registry:latest | sudo k3s ctr images import -
+echo "  - Importing sql-insight-engine-ui..."
+docker save sql-insight-engine-ui:latest | sudo k3s ctr images import -
 echo "✓ All images imported successfully"
 
 
@@ -114,7 +118,8 @@ kubectl get services -n sql-insight-engine
 
 echo ""
 echo "🌐 Access URLs:"
-echo "  API:        http://localhost:30001"
+echo "  UI:         http://localhost:8080 (Requires port-forward)"
+echo "  API:        http://localhost:8005 (Requires port-forward)"
 echo "  Grafana:    http://localhost:30300 (admin/admin)"
 echo "  Prometheus: http://localhost:30090"
 echo "  Traefik:    http://localhost:30080"
@@ -123,6 +128,7 @@ echo "💡 Useful Commands:"
 echo "  View logs:       kubectl logs -f deployment/sql-insight-engine-api -n sql-insight-engine"
 echo "  Get pods:        kubectl get pods -n sql-insight-engine"
 echo "  Describe pod:    kubectl describe pod <pod-name> -n sql-insight-engine"
-echo "  Port forward:    kubectl port-forward svc/sql-insight-engine-api 8001:8000 -n sql-insight-engine"
+echo "  Port forward UI: kubectl port-forward svc/sql-insight-engine-ui 8080:80 -n sql-insight-engine &"
+echo "  Port forward API: kubectl port-forward svc/sql-insight-engine-api 8005:8000 -n sql-insight-engine &"
 echo "  Delete deployment:  helm uninstall sql-insight-engine -n sql-insight-engine"
 echo ""

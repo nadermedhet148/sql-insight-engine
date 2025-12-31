@@ -234,3 +234,12 @@ secrets:
 # ConfigMaps
 configMaps:
   enabled: true
+
+ui:
+  image:
+    repository: sql-insight-engine-ui
+    tag: latest
+    pullPolicy: Never
+  service:
+    type: ClusterIP
+    port: 80

@@ -1,7 +1,7 @@
 // Configuration
 const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? 'http://127.0.0.1:8002'
-    : `${window.location.protocol}//${window.location.hostname}:8002`;
+    ? 'http://127.0.0.1:8005'
+    : `${window.location.protocol}//${window.location.hostname}:8005`;
 
 console.log('Using API Base URL:', API_BASE_URL);
 
