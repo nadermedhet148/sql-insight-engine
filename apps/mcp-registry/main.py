@@ -37,6 +37,33 @@ async def register_server(server: MCPServerInfo):
     print(f"Registered server: {server.name} at {server.url}")
     return {"status": "ok", "url": server.url}
 
+@app.on_event("startup")
+async def startup_event():
+    # Read static configuration from environment
+    mcp_services_config = os.getenv("MCP_SERVICES")
+    if mcp_services_config:
+        try:
+            services = json.loads(mcp_services_config)
+            print(f"Loading static services config: {services}")
+            for svc in services:
+                server = MCPServerInfo(
+                    name=svc["name"],
+                    url=svc["url"],
+                    last_seen=time.time(),
+                    status="unknown" # Will be checked by monitor
+                )
+                # Store with a specific prefix or flag to identify as static if needed, 
+                # but for now standard processing is fine as long as we keep updating it.
+                r.hset(REDIS_KEY, server.url, server.model_dump_json())
+                print(f"Registered static server: {server.name} at {server.url}")
+        except json.JSONDecodeError as e:
+            print(f"Error parsing MCP_SERVICES environment variable: {e}")
+        except Exception as e:
+            print(f"Error registering static services: {e}")
+
+    # Start monitor in the background
+    asyncio.create_task(monitor_servers())
+
 @app.get("/servers", response_model=List[MCPServerInfo])
 async def list_servers():
     current_time = time.time()
@@ -45,13 +72,28 @@ async def list_servers():
         servers = []
         for name, data in servers_data.items():
             server = MCPServerInfo.model_validate_json(data)
-            # Filter out servers not seen in the last 45 seconds (down from 60)
-            # and only return those that are still healthy according to the monitor
-            if current_time - server.last_seen < 45 and server.status == "healthy":
-                servers.append(server)
-            elif current_time - server.last_seen >= 45:
-                # Cleanup old servers
-                r.hdel(REDIS_KEY, name)
+            
+            # Logic update: If it's a "static" server (loaded from env), we generally want to keep it
+            # unless it's explicitly unhealthy for a long time?
+            # For this implementation, we will treat them similarly but rely on the monitor loop 
+            # to keep their 'last_seen' updated if we wanted to use strict timeouts.
+            # HOWEVER, the requirement is "static config". So we should NOT delete them just because 
+            # they haven't "registered" recently (since they don't register anymore).
+            
+            # WE WILL ASSUME that the monitor_servers loop updates 'last_seen' or we ignore last_seen for static.
+            # But monitor_servers currently only updates STATUS.
+            
+            # Simple fix: If it's in the Env Var config, we never delete it.
+            # But we don't have that list strictly here.
+            
+            # BETTER APPROACH: The monitor loop should update 'last_seen' for successful health checks.
+            # Let's modify monitor_servers as well.
+            
+            servers.append(server)
+            
+            # We are removing the aggressive TTL cleanup for now to support static services
+            # that don't self-register. The monitor will mark them unhealthy rather than deleting them.
+            
         return servers
     except Exception as e:
         print(f"Error listing servers from Redis: {e}")
@@ -81,6 +123,8 @@ async def monitor_servers():
                         resp = await client.get(health_url, timeout=3.0)
                         if resp.status_code == 200:
                             new_status = "healthy"
+                            # Update last_seen so we know it's alive, even if static
+                            server.last_seen = time.time()
                         else:
                             new_status = f"unhealthy ({resp.status_code})"
                     except Exception as e:
@@ -88,18 +132,15 @@ async def monitor_servers():
                     
                     if server.status != new_status:
                         server.status = new_status
-                        r.hset(REDIS_KEY, key, server.model_dump_json())
                         print(f"Server {server.name} at {key} status changed to: {new_status}")
+                    
+                    # Always save to update last_seen or status
+                    r.hset(REDIS_KEY, key, server.model_dump_json())
                         
             except Exception as e:
                 print(f"Error in monitor loop: {e}")
             
             await asyncio.sleep(30) # Check every 30 seconds
-
-@app.on_event("startup")
-async def startup_event():
-    # Start monitor in the background
-    asyncio.create_task(monitor_servers())
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8010)

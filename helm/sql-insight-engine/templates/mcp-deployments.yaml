@@ -26,8 +26,7 @@ spec:
         - name: http
           containerPort: {{ .Values.mcpPostgres.service.port }}
         env:
-        - name: MCP_REGISTRY_URL
-          value: "http://{{ include "sql-insight-engine.fullname" . }}-mcp-registry:{{ .Values.mcpRegistry.service.port }}"
+
         - name: GEMINI_API_KEY
           valueFrom:
             secretKeyRef:
@@ -83,8 +82,7 @@ spec:
         - name: http
           containerPort: {{ .Values.mcpChroma.service.port }}
         env:
-        - name: MCP_REGISTRY_URL
-          value: "http://{{ include "sql-insight-engine.fullname" . }}-mcp-registry:{{ .Values.mcpRegistry.service.port }}"
+
         - name: CHROMA_HOST
           value: "{{ include "sql-insight-engine.fullname" . }}-chromadb"
         - name: GEMINI_API_KEY
@@ -144,6 +142,8 @@ spec:
         env:
         - name: REDIS_HOST
           value: "{{ include "sql-insight-engine.fullname" . }}-redis"
+        - name: MCP_SERVICES
+          value: '[{"name": "mcp-postgres", "url": "http://{{ include "sql-insight-engine.fullname" . }}-mcp-postgres:{{ .Values.mcpPostgres.service.port }}/sse"}, {"name": "mcp-chroma", "url": "http://{{ include "sql-insight-engine.fullname" . }}-mcp-chroma:{{ .Values.mcpChroma.service.port }}/sse"}]'
         resources:
           {{- toYaml .Values.mcpRegistry.resources | nindent 10 }}
 ---

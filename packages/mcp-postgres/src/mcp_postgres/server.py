@@ -212,46 +212,5 @@ async def health():
 async def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
-def get_local_ip():
-    try:
-        # In Docker Swarm, the hostname resolves to the overlay network IP
-        return socket.gethostbyname(socket.gethostname())
-    except Exception as e:
-        logger.warning(f"IP detection error: {e}")
-        return "127.0.0.1"
-
-async def register_with_registry():
-    """Register this server with the MCP Registry periodically"""
-    local_ip = get_local_ip()
-    port = 8001 # Hardcoded for this service
-    # Construct URL using the real IP of this replica
-    registration_url = f"http://{local_ip}:{port}/sse"
-    
-    while True:
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{REGISTRY_URL}/register",
-                    json={
-                        "name": mcp_server.server_name,
-                        "url": registration_url
-                    },
-                    timeout=5.0
-                )
-                if response.status_code == 200:
-                    logger.info(f"Registered (replica {INSTANCE_ID}) at {registration_url}")
-                else:
-                    logger.error(f"Failed to register: {response.status_code}")
-        except Exception as e:
-            logger.error(f"Error registering: {str(e)}")
-        
-        # Heartbeat every 15 seconds
-        await asyncio.sleep(15)
-
-@app.on_event("startup")
-async def startup_event():
-    # Start registration in the background
-    asyncio.create_task(register_with_registry())
-
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)

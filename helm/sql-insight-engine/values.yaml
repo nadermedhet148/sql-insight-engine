@@ -8,7 +8,7 @@ global:
 
 # API Service
 api:
-  enabled: true
+  enabled: false
   replicaCount: 1
   image:
     repository: sql-insight-engine-api
@@ -30,7 +30,7 @@ api:
 
 # MCP Services
 mcpPostgres:
-  enabled: true
+  enabled: false
   replicaCount: 3
   image:
     repository: sql-insight-engine-mcp-postgres
@@ -47,7 +47,7 @@ mcpPostgres:
       cpu: "200m"
 
 mcpChroma:
-  enabled: true
+  enabled: false
   replicaCount: 3
   image:
     repository: sql-insight-engine-mcp-chroma
@@ -64,7 +64,7 @@ mcpChroma:
       cpu: "200m"
 
 mcpRegistry:
-  enabled: true
+  enabled: false
   replicaCount: 2
   image:
     repository: sql-insight-engine-mcp-registry
@@ -82,7 +82,7 @@ mcpRegistry:
 
 # Infrastructure Services
 postgresql:
-  enabled: true
+  enabled: false
   image:
     repository: postgres
     tag: "15"
@@ -97,7 +97,7 @@ postgresql:
     password: password
 
 externalTestDb:
-  enabled: true
+  enabled: false
   image:
     repository: postgres
     tag: "15"
@@ -112,7 +112,7 @@ externalTestDb:
     password: password
 
 redis:
-  enabled: true
+  enabled: false
   image:
     repository: redis
     tag: 7-alpine
@@ -123,7 +123,7 @@ redis:
     size: 1Gi
 
 rabbitmq:
-  enabled: true
+  enabled: false
   image:
     repository: rabbitmq
     tag: 3-management
@@ -142,7 +142,7 @@ rabbitmq:
       cpu: "200m"
 
 chromadb:
-  enabled: true
+  enabled: false
   image:
     repository: chromadb/chroma
     tag: latest
@@ -153,7 +153,7 @@ chromadb:
     size: 5Gi
 
 minio:
-  enabled: true
+  enabled: false
   image:
     repository: minio/minio
     tag: latest
@@ -169,7 +169,7 @@ minio:
 
 # Observability Stack
 prometheus:
-  enabled: true
+  enabled: false
   image:
     repository: prom/prometheus
     tag: latest
@@ -182,7 +182,7 @@ prometheus:
     size: 5Gi
 
 grafana:
-  enabled: true
+  enabled: false
   image:
     repository: grafana/grafana
     tag: latest
@@ -198,7 +198,7 @@ grafana:
     adminPassword: admin
 
 loki:
-  enabled: true
+  enabled: false
   image:
     repository: grafana/loki
     tag: 2.9.0
@@ -209,13 +209,13 @@ loki:
     size: 5Gi
 
 promtail:
-  enabled: true
+  enabled: false
   image:
     repository: grafana/promtail
     tag: 2.9.0
 
 traefik:
-  enabled: true
+  enabled: false
   image:
     repository: traefik
     tag: v2.10
@@ -236,6 +236,7 @@ configMaps:
   enabled: true
 
 ui:
+  enabled: false
   image:
     repository: sql-insight-engine-ui
     tag: latest
