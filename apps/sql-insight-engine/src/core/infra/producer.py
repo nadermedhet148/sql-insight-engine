@@ -10,9 +10,17 @@ class BaseProducer:
         if self.host == "rabbitmq" and not os.path.exists('/.dockerenv'):
             self.host = "localhost"
             
-        self.connection = pika.BlockingConnection(
-            pika.ConnectionParameters(host=self.host)
+        user = os.getenv("RABBITMQ_USER", "guest")
+        password = os.getenv("RABBITMQ_PASSWORD", "guest")
+        credentials = pika.PlainCredentials(user, password)
+        
+        parameters = pika.ConnectionParameters(
+            host=self.host,
+            credentials=credentials,
+            heartbeat=600,
+            blocked_connection_timeout=300
         )
+        self.connection = pika.BlockingConnection(parameters)
         self.channel = self.connection.channel()
         self.channel.queue_declare(queue=self.queue_name, durable=True)
 

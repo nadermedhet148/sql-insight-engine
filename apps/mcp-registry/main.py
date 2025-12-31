@@ -45,10 +45,11 @@ async def list_servers():
         servers = []
         for name, data in servers_data.items():
             server = MCPServerInfo.model_validate_json(data)
-            # Filter out servers not seen in the last 5 minutes
-            if current_time - server.last_seen < 300:
+            # Filter out servers not seen in the last 45 seconds (down from 60)
+            # and only return those that are still healthy according to the monitor
+            if current_time - server.last_seen < 45 and server.status == "healthy":
                 servers.append(server)
-            else:
+            elif current_time - server.last_seen >= 45:
                 # Cleanup old servers
                 r.hdel(REDIS_KEY, name)
         return servers

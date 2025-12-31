@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Connection Test</title>
+</head>
+<body>
+    <h1>API Connection Test</h1>
+    <button onclick="testConnection()">Test API Connection</button>
+    <pre id="result"></pre>
+
+    <script>
+        const API_URL = 'http://127.0.0.1:8001';
+        
+        async function testConnection() {
+            const resultEl = document.getElementById('result');
+            resultEl.textContent = 'Testing connection...\n';
+            
+            try {
+                // Test 1: Health check
+                resultEl.textContent += '\n1. Testing /health endpoint...\n';
+                const healthResponse = await fetch(`${API_URL}/health`);
+                const healthData = await healthResponse.json();
+                resultEl.textContent += `✓ Health check: ${JSON.stringify(healthData)}\n`;
+                
+                // Test 2: Create user
+                resultEl.textContent += '\n2. Testing POST /users/ endpoint...\n';
+                const userResponse = await fetch(`${API_URL}/users/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ account_id: `test_${Date.now()}` })
+                });
+                const userData = await userResponse.json();
+                resultEl.textContent += `✓ User created: ${JSON.stringify(userData)}\n`;
+                
+                resultEl.textContent += '\n✅ All tests passed! API is accessible from the browser.\n';
+            } catch (error) {
+                resultEl.textContent += `\n❌ Error: ${error.message}\n`;
+                resultEl.textContent += `Stack: ${error.stack}\n`;
+            }
+        }
+        
+        console.log('API Base URL:', API_URL);
+    </script>
+</body>
+</html>

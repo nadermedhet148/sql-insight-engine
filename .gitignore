@@ -38,3 +38,4 @@ docker-compose.override.yml
 # IDEs
 .vscode/
 .idea/
+.archive/

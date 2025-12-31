@@ -1,0 +1,96 @@
+{{- if .Values.api.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-api
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.api.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "sql-insight-engine.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        {{- include "sql-insight-engine.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+    spec:
+      containers:
+      - name: api
+        image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+        imagePullPolicy: {{ .Values.api.image.pullPolicy | default .Values.global.imagePullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.api.service.port }}
+          protocol: TCP
+        env:
+        - name: DATABASE_URL
+          value: "postgresql://{{ .Values.postgresql.env.user }}:{{ .Values.postgresql.env.password }}@{{ include "sql-insight-engine.fullname" . }}-postgresql:{{ .Values.postgresql.service.port }}/{{ .Values.postgresql.env.database }}"
+        - name: DATABASE_M_URL
+          value: "postgresql://{{ .Values.postgresql.env.user }}:{{ .Values.postgresql.env.password }}@{{ include "sql-insight-engine.fullname" . }}-postgresql:{{ .Values.postgresql.service.port }}/{{ .Values.postgresql.env.database }}"
+        - name: EXTERNAL_TEST_DB_URL
+          value: "postgresql://{{ .Values.externalTestDb.env.user }}:{{ .Values.externalTestDb.env.password }}@{{ include "sql-insight-engine.fullname" . }}-external-test-db:{{ .Values.externalTestDb.service.port }}/{{ .Values.externalTestDb.env.database }}"
+        - name: REDIS_HOST
+          value: "{{ include "sql-insight-engine.fullname" . }}-redis"
+        - name: RABBITMQ_HOST
+          value: "{{ include "sql-insight-engine.fullname" . }}-rabbitmq"
+        - name: RABBITMQ_USER
+          value: "{{ .Values.rabbitmq.env.user }}"
+        - name: RABBITMQ_PASSWORD
+          value: "{{ .Values.rabbitmq.env.password }}"
+        - name: CHROMA_HOST
+          value: "{{ include "sql-insight-engine.fullname" . }}-chromadb"
+        - name: MINIO_HOST
+          value: "{{ include "sql-insight-engine.fullname" . }}-minio"
+        - name: MINIO_ROOT_USER
+          value: "{{ .Values.minio.env.rootUser }}"
+        - name: MINIO_ROOT_PASSWORD
+          value: "{{ .Values.minio.env.rootPassword }}"
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sql-insight-engine.fullname" . }}-secrets
+              key: gemini-api-key
+        - name: MCP_REGISTRY_URL
+          value: "http://{{ include "sql-insight-engine.fullname" . }}-mcp-registry:{{ .Values.mcpRegistry.service.port }}"
+        - name: PYTHONUNBUFFERED
+          value: "{{ .Values.api.env.pythonUnbuffered }}"
+        resources:
+          {{- toYaml .Values.api.resources | nindent 10 }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-api
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  type: {{ .Values.api.service.type }}
+  ports:
+  - port: {{ .Values.api.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+    {{- if eq .Values.api.service.type "NodePort" }}
+    nodePort: {{ .Values.api.service.nodePort }}
+    {{- end }}
+  selector:
+    {{- include "sql-insight-engine.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+{{- end }}

@@ -1,0 +1,155 @@
+{{- if .Values.grafana.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-grafana-datasources
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+data:
+  datasources.yaml: |
+    apiVersion: 1
+
+    deleteDatasources:
+      - name: Prometheus
+        orgId: 1
+      - name: Loki
+        orgId: 1
+
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://{{ include "sql-insight-engine.fullname" . }}-prometheus:9090
+        isDefault: true
+        editable: true
+        uid: prometheus
+        jsonData:
+          timeInterval: "5s"
+
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://{{ include "sql-insight-engine.fullname" . }}-loki:3100
+        editable: true
+        uid: loki
+        jsonData:
+          maxLines: 1000
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-grafana-dashboards
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+data:
+  dashboards.yaml: |
+    apiVersion: 1
+
+    providers:
+      - name: 'default'
+        orgId: 1
+        folder: 'SQL Insight Engine'
+        type: file
+        disableDeletion: false
+        updateIntervalSeconds: 30
+        options:
+          path: /etc/grafana/provisioning/dashboards
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-grafana
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+spec:
+  serviceName: {{ include "sql-insight-engine.fullname" . }}-grafana
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "sql-insight-engine.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: grafana
+  template:
+    metadata:
+      labels:
+        {{- include "sql-insight-engine.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: grafana
+    spec:
+      containers:
+      - name: grafana
+        image: "{{ .Values.grafana.image.repository }}:{{ .Values.grafana.image.tag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.grafana.service.port }}
+        env:
+        - name: GF_SECURITY_ADMIN_USER
+          value: {{ .Values.grafana.env.adminUser }}
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: {{ .Values.grafana.env.adminPassword }}
+        - name: GF_USERS_ALLOW_SIGN_UP
+          value: "false"
+        - name: GF_PATHS_PROVISIONING
+          value: /etc/grafana/provisioning
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/grafana
+        - name: datasources
+          mountPath: /etc/grafana/provisioning/datasources
+        - name: dashboards-config
+          mountPath: /etc/grafana/provisioning/dashboards
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: datasources
+        configMap:
+          name: {{ include "sql-insight-engine.fullname" . }}-grafana-datasources
+      - name: dashboards-config
+        configMap:
+          name: {{ include "sql-insight-engine.fullname" . }}-grafana-dashboards
+  {{- if .Values.grafana.persistence.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: {{ .Values.global.storageClass }}
+      resources:
+        requests:
+          storage: {{ .Values.grafana.persistence.size }}
+  {{- else }}
+      - name: data
+        emptyDir: {}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-grafana
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+spec:
+  type: {{ .Values.grafana.service.type }}
+  ports:
+  - port: {{ .Values.grafana.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+    {{- if eq .Values.grafana.service.type "NodePort" }}
+    nodePort: {{ .Values.grafana.service.nodePort }}
+    {{- end }}
+  selector:
+    {{- include "sql-insight-engine.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: grafana
+{{- end }}

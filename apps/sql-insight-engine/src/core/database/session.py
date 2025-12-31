@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://admin:password@localhost:5432/insight_engine")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://admin:password@metadata_store:5432/insight_engine")
 
 # Log masked URL for debugging
 masked_url = DATABASE_URL

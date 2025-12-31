@@ -26,12 +26,27 @@ target_metadata = Base.metadata
 
 # Override sqlalchemy.url from environment variable if present
 db_url = os.getenv("DATABASE_M_URL")
+source = "DATABASE_M_URL"
+
+if not db_url:
+    db_url = os.getenv("DATABASE_URL")
+    source = "DATABASE_URL"
+
 if db_url:
+    # Handle the case where the URL might be pointing to localhost but we are in docker
+    # If the source is DATABASE_URL and it's from .env, it might be 'localhost'
     config.set_main_option("sqlalchemy.url", db_url)
-    host = db_url.split('@')[1].split('/')[0] if '@' in db_url else 'unknown'
-    print(f"Alembic using DATABASE_M_URL with host: {host}")
+    
+    # Mask password for logging
+    masked_url = db_url
+    if "@" in db_url:
+        parts = db_url.split("@")
+        if ":" in parts[0]:
+            masked_url = f"{parts[0].split(':')[0]}:****@{parts[1]}"
+    
+    print(f"Alembic using {source}: {masked_url}")
 else:
-    print("Alembic using default URL from config")
+    print("Alembic using default URL from alembic.ini (falling back to localhost)")
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

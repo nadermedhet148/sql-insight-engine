@@ -20,24 +20,37 @@ class GenericMCPClient:
     def __init__(self, sse_url: str):
         self.sse_url = sse_url
     
-    async def list_tools(self) -> List[Any]:
-        print(f"[TRACE] list_tools for {self.sse_url}")
-        try:
-            async with sse_client(self.sse_url) as (read, write):
-                print(f"[TRACE] SSE connected for {self.sse_url}")
-                async with ClientSession(read, write) as session:
-                    print(f"[TRACE] Session created, initializing... {self.sse_url}")
-                    await asyncio.wait_for(session.initialize(), timeout=5.0)
-                    print(f"[TRACE] Session initialized, listing tools... {self.sse_url}")
-                    result = await asyncio.wait_for(session.list_tools(), timeout=5.0)
-                    print(f"[TRACE] Tools listed for {self.sse_url}: {len(result.tools)}")
-                    return result.tools
-        except asyncio.TimeoutError:
-            print(f"[TRACE] Timeout in list_tools for {self.sse_url}")
-            return []
-        except Exception as e:
-            print(f"Error listing tools from {self.sse_url}: {e}")
-            return []
+    async def list_tools(self, retries=2) -> List[Any]:
+        for attempt in range(retries):
+            print(f"[TRACE] list_tools for {self.sse_url} (Attempt {attempt+1})")
+            try:
+                async with sse_client(self.sse_url) as (read, write):
+                    print(f"[TRACE] SSE connected for {self.sse_url}")
+                    async with ClientSession(read, write) as session:
+                        print(f"[TRACE] Session created, initializing... {self.sse_url}")
+                        await asyncio.wait_for(session.initialize(), timeout=5.0)
+                        print(f"[TRACE] Session initialized, listing tools... {self.sse_url}")
+                        result = await asyncio.wait_for(session.list_tools(), timeout=5.0)
+                        print(f"[TRACE] Tools listed for {self.sse_url}: {len(result.tools)}")
+                        return result.tools
+            except asyncio.TimeoutError:
+                print(f"[TRACE] Timeout in list_tools for {self.sse_url}")
+            except Exception as e:
+                err_type = type(e).__name__
+                if err_type == "ExceptionGroup":
+                    # Unpack ExceptionGroup for better logging
+                    sub_errors = []
+                    if hasattr(e, 'exceptions'):
+                        for sub_e in e.exceptions:
+                            sub_errors.append(f"{type(sub_e).__name__}: {sub_e}")
+                    print(f"[TRACE] Error listing tools from {self.sse_url}: ExceptionGroup [{', '.join(sub_errors)}]")
+                else:
+                    print(f"[TRACE] Error listing tools from {self.sse_url}: {err_type}: {e}")
+            
+            if attempt < retries - 1:
+                await asyncio.sleep(2) # Increased delay between retries
+        
+        return []
 
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> MCPToolResult:
         start_time = time.time()

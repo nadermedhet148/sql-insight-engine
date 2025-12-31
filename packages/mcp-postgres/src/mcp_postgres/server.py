@@ -243,8 +243,8 @@ async def register_with_registry():
         except Exception as e:
             logger.error(f"Error registering: {str(e)}")
         
-        # Heartbeat every 2 minutes
-        await asyncio.sleep(120)
+        # Heartbeat every 15 seconds
+        await asyncio.sleep(15)
 
 @app.on_event("startup")
 async def startup_event():
