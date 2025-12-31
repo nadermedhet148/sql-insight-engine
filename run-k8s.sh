@@ -73,6 +73,14 @@ echo "  - Importing sql-insight-engine-mcp-registry..."
 docker save sql-insight-engine-mcp-registry:latest | sudo k3s ctr images import -
 echo "✓ All images imported successfully"
 
+
+IMAGES="postgres:15 redis:7-alpine chromadb/chroma:latest grafana/grafana:latest prom/prometheus:latest"
+for img in $IMAGES; do
+    echo "Processing $img..."
+    docker pull $img
+    docker save $img | sudo k3s ctr images import -
+done
+
 # Deploy with Helm
 echo "Deploying with Helm..."
 helm upgrade --install sql-insight-engine ./helm/sql-insight-engine \

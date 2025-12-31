@@ -116,8 +116,10 @@ class PostgresMCPServer:
                     schema = arguments.get("schema") or "public"
                     logger.info(f"Listing tables for schema: {schema}")
                     tables = inspector.get_table_names(schema=schema)
-                    logger.info(f"Found {len(tables)} tables")
-                    result = [TextContent(type="text", text=f"Tables:\n" + "\n".join(f"- {t}" for t in tables))]
+                    logger.info(f"Found {len(tables)} tables: {tables}")
+                    formatted_text = f"Tables:\n" + "\n".join(f"- {t}" for t in tables)
+                    logger.info(f"Returning content: {formatted_text!r}")
+                    result = [TextContent(type="text", text=formatted_text)]
                 
                 elif name == "describe_table":
                     table_name = arguments["table_name"]

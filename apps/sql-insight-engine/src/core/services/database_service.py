@@ -67,6 +67,7 @@ class DatabaseService:
             result = self._run_async(self._call_tool_async(db_config, "list_tables", {}))
             
             if result.success:
+                print(f"[DEBUG] MCP Result Content: {result.content!r}")
                 # Basic parsing of the markdown-like output from mcp-postgres
                 lines = result.content.split('\n')
                 tables = []
