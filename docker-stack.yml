@@ -26,6 +26,7 @@ services:
     image: sql-insight-engine-mcp-registry:latest
     environment:
       - REDIS_HOST=redis
+      - PYTHONUNBUFFERED=1
     networks:
       - insight_network
     deploy:
@@ -43,6 +44,7 @@ services:
     environment:
       - MCP_REGISTRY_URL=http://mcp-registry:8010
       - MCP_SERVER_URL=http://mcp-postgres:8001/sse
+      - PYTHONUNBUFFERED=1
     networks:
       - insight_network
     deploy:
@@ -61,6 +63,7 @@ services:
       - CHROMA_HOST=chromadb
       - MCP_REGISTRY_URL=http://mcp-registry:8010
       - MCP_SERVER_URL=http://mcp-chroma:8002/sse
+      - PYTHONUNBUFFERED=1
     networks:
       - insight_network
     deploy:
@@ -140,6 +143,7 @@ services:
     image: sql-insight-engine-api:latest
     environment:
       - DATABASE_URL=postgresql://${METADATA_DB_USER:-admin}:${METADATA_DB_PASSWORD:-password}@metadata_store:5432/${METADATA_DB_NAME:-insight_engine}
+      - DATABASE_M_URL=postgresql://${METADATA_DB_USER:-admin}:${METADATA_DB_PASSWORD:-password}@metadata_store:5432/${METADATA_DB_NAME:-insight_engine}
       - REDIS_HOST=redis
       - RABBITMQ_HOST=rabbitmq
       - CHROMA_HOST=chromadb
@@ -148,6 +152,8 @@ services:
       - PYTHONUNBUFFERED=1
     networks:
       - insight_network
+    ports:
+      - "8001:8000"
     deploy:
       replicas: 3
       restart_policy:

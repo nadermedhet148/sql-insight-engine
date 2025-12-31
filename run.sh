@@ -20,6 +20,14 @@ docker tag sql-insight-engine-mcp-chroma:latest sql-insight-engine-mcp-chroma:la
 docker tag sql-insight-engine-api:latest sql-insight-engine-api:latest
 
 echo "Deploying stack..."
+if [ -f .env ]; then
+    echo "Loading environment variables from .env..."
+    set -a
+    source .env
+    set +a
+    echo "DEBUG: METADATA_DB_USER=$METADATA_DB_USER"
+    echo "DEBUG: METADATA_DB_NAME=$METADATA_DB_NAME"
+fi
 docker stack deploy -c docker-stack.yml insight
 
 echo "Waiting for infrastructure services to start..."

@@ -92,11 +92,19 @@ class PostgresMCPServer:
             start_time = time.time()
             status = "success"
             
+            # Mask sensitive info for logging
+            log_args = arguments.copy()
+            if "db_url" in log_args:
+                log_args["db_url"] = "***"
+            
+            logger.info(f"Tool call: {name} | Args: {log_args}")
+            
             db_url = arguments.get("db_url")
             if not db_url:
                 db_url = os.getenv("MCP_DB_URL") # Fallback
             
             if not db_url:
+                logger.error(f"Tool {name} failed: No db_url provided")
                 MCP_TOOL_CALLS.labels(tool_name=name, service='mcp-postgres', instance=INSTANCE_ID, status='error').inc()
                 return [TextContent(type="text", text="Error: No db_url provided and MCP_DB_URL not set")]
 
@@ -106,13 +114,16 @@ class PostgresMCPServer:
             try:
                 if name == "list_tables":
                     schema = arguments.get("schema") or "public"
+                    logger.info(f"Listing tables for schema: {schema}")
                     tables = inspector.get_table_names(schema=schema)
+                    logger.info(f"Found {len(tables)} tables")
                     result = [TextContent(type="text", text=f"Tables:\n" + "\n".join(f"- {t}" for t in tables))]
                 
                 elif name == "describe_table":
                     table_name = arguments["table_name"]
                     schema = arguments.get("schema") or "public"
                     
+                    logger.info(f"Describing table: {table_name} in schema: {schema}")
                     columns = inspector.get_columns(table_name, schema=schema)
                     pk = inspector.get_pk_constraint(table_name, schema=schema)
                     
@@ -120,18 +131,21 @@ class PostgresMCPServer:
                     for col in columns:
                         text += f"- {col['name']}: {col['type']}\n"
                     text += f"\nPK: {', '.join(pk.get('constrained_columns', []))}\n"
+                    logger.info(f"Successfully described table {table_name}")
                     result = [TextContent(type="text", text=text)]
                 else:
+                    logger.warning(f"Unknown tool requested: {name}")
                     result = [TextContent(type="text", text=f"Unknown tool: {name}")]
                     status = "unknown"
                 
             except Exception as e:
-                logger.exception(f"Error in {name}: {str(e)}")
+                logger.exception(f"Error executing {name}: {str(e)}")
                 status = "error"
                 result = [TextContent(type="text", text=f"Error: {str(e)}")]
             
             finally:
                 duration = time.time() - start_time
+                logger.info(f"Tool call finished: {name} | Status: {status} | Duration: {duration:.3f}s")
                 MCP_TOOL_CALLS.labels(tool_name=name, service='mcp-postgres', instance=INSTANCE_ID, status=status).inc()
                 MCP_TOOL_DURATION.labels(tool_name=name, service='mcp-postgres').observe(duration)
             
@@ -196,8 +210,21 @@ async def health():
 async def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
+def get_local_ip():
+    try:
+        # In Docker Swarm, the hostname resolves to the overlay network IP
+        return socket.gethostbyname(socket.gethostname())
+    except Exception as e:
+        logger.warning(f"IP detection error: {e}")
+        return "127.0.0.1"
+
 async def register_with_registry():
     """Register this server with the MCP Registry periodically"""
+    local_ip = get_local_ip()
+    port = 8001 # Hardcoded for this service
+    # Construct URL using the real IP of this replica
+    registration_url = f"http://{local_ip}:{port}/sse"
+    
     while True:
         try:
             async with httpx.AsyncClient() as client:
@@ -205,16 +232,16 @@ async def register_with_registry():
                     f"{REGISTRY_URL}/register",
                     json={
                         "name": mcp_server.server_name,
-                        "url": SERVER_URL
+                        "url": registration_url
                     },
                     timeout=5.0
                 )
                 if response.status_code == 200:
-                    logger.info(f"Successfully registered with registry: {REGISTRY_URL}")
+                    logger.info(f"Registered (replica {INSTANCE_ID}) at {registration_url}")
                 else:
-                    logger.error(f"Failed to register with registry: {response.status_code}")
+                    logger.error(f"Failed to register: {response.status_code}")
         except Exception as e:
-            logger.error(f"Error registering with registry: {str(e)}")
+            logger.error(f"Error registering: {str(e)}")
         
         # Heartbeat every 2 minutes
         await asyncio.sleep(120)

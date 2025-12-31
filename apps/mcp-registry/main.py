@@ -32,9 +32,10 @@ async def register_server(server: MCPServerInfo):
     server.last_seen = time.time()
     # If it's registering, it's likely healthy, but the background task will confirm
     server.status = "healthy"
-    r.hset(REDIS_KEY, server.name, server.model_dump_json())
+    # Use URL as key to allow multiple replicas of the same service
+    r.hset(REDIS_KEY, server.url, server.model_dump_json())
     print(f"Registered server: {server.name} at {server.url}")
-    return {"status": "ok", "name": server.name}
+    return {"status": "ok", "url": server.url}
 
 @app.get("/servers", response_model=List[MCPServerInfo])
 async def list_servers():
@@ -44,8 +45,8 @@ async def list_servers():
         servers = []
         for name, data in servers_data.items():
             server = MCPServerInfo.model_validate_json(data)
-            # Filter out servers not seen in the last hour
-            if current_time - server.last_seen < 3600:
+            # Filter out servers not seen in the last 5 minutes
+            if current_time - server.last_seen < 300:
                 servers.append(server)
             else:
                 # Cleanup old servers
@@ -70,7 +71,7 @@ async def monitor_servers():
         while True:
             try:
                 servers_data = r.hgetall(REDIS_KEY)
-                for name, data in servers_data.items():
+                for key, data in servers_data.items():
                     server = MCPServerInfo.model_validate_json(data)
                     base_url = server.url.replace("/sse", "")
                     health_url = f"{base_url}/health"
@@ -82,12 +83,12 @@ async def monitor_servers():
                         else:
                             new_status = f"unhealthy ({resp.status_code})"
                     except Exception as e:
-                        new_status = f"error: {str(e)}"
+                        new_status = f"error: {repr(e)}"
                     
                     if server.status != new_status:
                         server.status = new_status
-                        r.hset(REDIS_KEY, name, server.model_dump_json())
-                        print(f"Server {name} status changed to: {new_status}")
+                        r.hset(REDIS_KEY, key, server.model_dump_json())
+                        print(f"Server {server.name} at {key} status changed to: {new_status}")
                         
             except Exception as e:
                 print(f"Error in monitor loop: {e}")

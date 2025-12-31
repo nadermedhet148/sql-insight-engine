@@ -28,6 +28,10 @@ target_metadata = Base.metadata
 db_url = os.getenv("DATABASE_M_URL")
 if db_url:
     config.set_main_option("sqlalchemy.url", db_url)
+    host = db_url.split('@')[1].split('/')[0] if '@' in db_url else 'unknown'
+    print(f"Alembic using DATABASE_M_URL with host: {host}")
+else:
+    print("Alembic using default URL from config")
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

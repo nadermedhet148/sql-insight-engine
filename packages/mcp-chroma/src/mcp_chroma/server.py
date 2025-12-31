@@ -98,6 +98,8 @@ class ChromaMCPServer:
             start_time = time_module.time()
             status = "success"
             
+            logger.info(f"Tool call: {name} | Args: {arguments}")
+            
             try:
                 if name == "search_relevant_schema":
                     query = arguments["query"]
@@ -105,9 +107,11 @@ class ChromaMCPServer:
                     n_results = int(arguments.get("n_results", 2))
                     
                     # 1. Get embedding
+                    logger.info(f"Generating embedding for query: {query[:50]}...")
                     embedding = await self._get_embedding_from_mcp(query)
                     
                     # 2. Query Chroma
+                    logger.info(f"Querying Chroma for account: {account_id}, results limit: {n_results}")
                     client = self._get_client()
                     collection = client.get_or_create_collection(name="account_schema_info")
                     results = collection.query(
@@ -117,22 +121,26 @@ class ChromaMCPServer:
                     )
                     
                     if not results or not results.get('documents') or not results['documents'][0]:
+                        logger.info("No relevant schema found in Chroma")
                         result = [TextContent(type="text", text="No relevant schema found.")]
                     else:
                         docs = results['documents'][0]
+                        logger.info(f"Found {len(docs)} relevant schema documents")
                         formatted = "# Relevant Schema\n\n" + "\n".join(f"- {d}" for d in docs)
                         result = [TextContent(type="text", text=formatted)]
                 else:
+                    logger.warning(f"Unknown tool requested: {name}")
                     result = [TextContent(type="text", text=f"Unknown tool: {name}")]
                     status = "unknown"
                     
             except Exception as e:
-                logger.exception(f"Error in chroma search: {e}")
+                logger.exception(f"Error in chroma search ({name}): {e}")
                 status = "error"
                 result = [TextContent(type="text", text=f"Error: {str(e)}")]
             
             finally:
                 duration = time_module.time() - start_time
+                logger.info(f"Tool call finished: {name} | Status: {status} | Duration: {duration:.3f}s")
                 MCP_TOOL_CALLS.labels(tool_name=name, service='mcp-chroma', instance=INSTANCE_ID, status=status).inc()
                 MCP_TOOL_DURATION.labels(tool_name=name, service='mcp-chroma').observe(duration)
             
@@ -196,8 +204,21 @@ async def health():
 async def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
+def get_local_ip():
+    try:
+        # In Docker Swarm, the hostname resolves to the overlay network IP
+        return socket.gethostbyname(socket.gethostname())
+    except Exception as e:
+        logger.warning(f"IP detection error: {e}")
+        return "127.0.0.1"
+
 async def register_with_registry():
     """Register this server with the MCP Registry periodically"""
+    local_ip = get_local_ip()
+    port = 8002 # Hardcoded for this service
+    # Construct URL using the real IP of this replica
+    registration_url = f"http://{local_ip}:{port}/sse"
+    
     while True:
         try:
             async with httpx.AsyncClient() as client:
@@ -205,16 +226,16 @@ async def register_with_registry():
                     f"{REGISTRY_URL}/register",
                     json={
                         "name": mcp_server.server_name,
-                        "url": SERVER_URL
+                        "url": registration_url
                     },
                     timeout=5.0
                 )
                 if response.status_code == 200:
-                    logger.info(f"Successfully registered with registry: {REGISTRY_URL}")
+                    logger.info(f"Registered (replica {INSTANCE_ID}) at {registration_url}")
                 else:
-                    logger.error(f"Failed to register with registry: {response.status_code}")
+                    logger.error(f"Failed to register: {response.status_code}")
         except Exception as e:
-            logger.error(f"Error registering with registry: {str(e)}")
+            logger.error(f"Error registering: {str(e)}")
         
         # Heartbeat every 2 minutes
         await asyncio.sleep(120)

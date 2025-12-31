@@ -8,6 +8,16 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://admin:password@localhost:5432/insight_engine")
 
+# Log masked URL for debugging
+masked_url = DATABASE_URL
+if "@" in DATABASE_URL:
+    prefix, _, suffix = DATABASE_URL.partition("@")
+    if ":" in prefix:
+        main_prefix, _, _ = prefix.rpartition(":")
+        masked_url = f"{main_prefix}:****@{suffix}"
+
+print(f"DATABASE_URL being used: {masked_url}")
+
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
