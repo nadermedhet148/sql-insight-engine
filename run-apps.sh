@@ -39,6 +39,7 @@ echo "Deploying Applications..."
 helm upgrade --install sql-insight-engine ./helm/sql-insight-engine \
     $REUSE_VALUES \
     --set api.enabled=true \
+    --set api.replicaCount=3 \
     --set ui.enabled=true \
     --set mcpPostgres.enabled=true \
     --set mcpChroma.enabled=true \
