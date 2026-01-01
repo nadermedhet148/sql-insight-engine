@@ -9,7 +9,7 @@ global:
 # API Service
 api:
   enabled: false
-  replicaCount: 1
+  replicaCount: 3
   image:
     repository: sql-insight-engine-api
     tag: latest

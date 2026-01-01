@@ -130,12 +130,15 @@ async def monitor_servers():
                     except Exception as e:
                         new_status = f"error: {repr(e)}"
                     
-                    if server.status != new_status:
-                        server.status = new_status
-                        print(f"Server {server.name} at {key} status changed to: {new_status}")
-                    
-                    # Always save to update last_seen or status
-                    r.hset(REDIS_KEY, key, server.model_dump_json())
+                    if new_status == "healthy":
+                        if server.status != new_status:
+                            server.status = new_status
+                            print(f"Server {server.name} at {key} status changed to: {new_status}")
+                        # Only save (update last_seen/status) if healthy
+                        r.hset(REDIS_KEY, key, server.model_dump_json())
+                    else:
+                        print(f"Removing unhealthy server: {server.name} at {key} (Status: {new_status})")
+                        r.hdel(REDIS_KEY, key)
                         
             except Exception as e:
                 print(f"Error in monitor loop: {e}")

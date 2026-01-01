@@ -27,6 +27,8 @@ spec:
           containerPort: {{ .Values.mcpPostgres.service.port }}
         env:
 
+        - name: MCP_DB_URL
+          value: "postgresql://{{ .Values.externalTestDb.env.user }}:{{ .Values.externalTestDb.env.password }}@{{ include "sql-insight-engine.fullname" . }}-external-test-db:{{ .Values.externalTestDb.service.port }}/{{ .Values.externalTestDb.env.database }}"
         - name: GEMINI_API_KEY
           valueFrom:
             secretKeyRef:
@@ -44,6 +46,7 @@ metadata:
     app.kubernetes.io/component: mcp-postgres
 spec:
   type: ClusterIP
+  sessionAffinity: ClientIP
   ports:
   - port: {{ .Values.mcpPostgres.service.port }}
     targetPort: http
@@ -102,6 +105,7 @@ metadata:
     app.kubernetes.io/component: mcp-chroma
 spec:
   type: ClusterIP
+  sessionAffinity: ClientIP
   ports:
   - port: {{ .Values.mcpChroma.service.port }}
     targetPort: http
