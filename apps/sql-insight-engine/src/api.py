@@ -63,17 +63,21 @@ async def lifespan(app: FastAPI):
     import asyncio
     await asyncio.sleep(5)  # Give RabbitMQ a moment to fully initialize
     
+    # Start multiple workers for each consumer to handle parallel processing
+    num_workers = 10 
+    
     for name, starter_func in consumers:
         try:
-            t = threading.Thread(
-                target=starter_func,
-                args=(mq_host,),
-                name=f"SagaConsumer-{name}",
-                daemon=True
-            )
-            t.start()
-            threads.append(t)
-            print(f"[LIFESPAN] ✓ Started {name} Consumer")
+            for i in range(num_workers):
+                t = threading.Thread(
+                    target=starter_func,
+                    args=(mq_host,),
+                    name=f"SagaConsumer-{name}-{i+1}",
+                    daemon=True
+                )
+                t.start()
+                threads.append(t)
+            print(f"[LIFESPAN] ✓ Started {num_workers} workers for {name} Consumer")
         except Exception as e:
             print(f"[LIFESPAN] ✗ Failed to start {name} Consumer: {e}")
     

@@ -6,24 +6,36 @@ echo "=== SQL Insight Engine - Applications Deployment ==="
 
 NAMESPACE="sql-insight-engine"
 
+# 0. Clean up old images
+echo "Cleaning up old images..."
+IMAGES_TO_CLEAN="sql-insight-engine-api:latest sql-insight-engine-mcp-postgres:latest sql-insight-engine-mcp-chroma:latest sql-insight-engine-mcp-registry:latest sql-insight-engine-ui:latest"
+for img in $IMAGES_TO_CLEAN; do
+   echo "Removing $img..."
+   docker rmi -f $img || true
+done
+
 # 1. Build and Import Application Images
 echo "Building Docker images..."
 docker compose build
 echo "Building UI image..."
 docker build -t sql-insight-engine-ui:latest ./apps/sql-insight-engine/ui
 
-echo "Tagging and Importing Application Images..."
-APP_IMAGES="sql-insight-engine-api:latest sql-insight-engine-mcp-postgres:latest sql-insight-engine-mcp-chroma:latest sql-insight-engine-mcp-registry:latest sql-insight-engine-ui:latest"
+# Tag images with timestamp to force K8s update
+TAG=$(date +%s)
+echo "Tagging images with version: $TAG"
 
-# Explicit retagging
-docker tag sql-insight-engine-api:latest sql-insight-engine-api:latest
-docker tag sql-insight-engine-mcp-postgres:latest sql-insight-engine-mcp-postgres:latest
-docker tag sql-insight-engine-mcp-chroma:latest sql-insight-engine-mcp-chroma:latest
-docker tag sql-insight-engine-mcp-registry:latest sql-insight-engine-mcp-registry:latest
+docker tag sql-insight-engine-api:latest sql-insight-engine-api:$TAG
+docker tag sql-insight-engine-mcp-postgres:latest sql-insight-engine-mcp-postgres:$TAG
+docker tag sql-insight-engine-mcp-chroma:latest sql-insight-engine-mcp-chroma:$TAG
+docker tag sql-insight-engine-mcp-registry:latest sql-insight-engine-mcp-registry:$TAG
+docker tag sql-insight-engine-ui:latest sql-insight-engine-ui:$TAG
 
-# for img in $APP_IMAGES; do
-#     import_image_to_k3s "$img"
-# done
+echo "Importing images into K3s..."
+APP_IMAGES="sql-insight-engine-api:$TAG sql-insight-engine-mcp-postgres:$TAG sql-insight-engine-mcp-chroma:$TAG sql-insight-engine-mcp-registry:$TAG sql-insight-engine-ui:$TAG"
+
+for img in $APP_IMAGES; do
+    import_image_to_k3s "$img"
+done
 
 # 2. Check if release exists
 REUSE_VALUES=""
@@ -40,16 +52,27 @@ helm upgrade --install sql-insight-engine ./helm/sql-insight-engine \
     $REUSE_VALUES \
     --set api.enabled=true \
     --set api.replicaCount=3 \
+    --set api.image.tag=$TAG \
     --set ui.enabled=true \
+    --set ui.image.tag=$TAG \
     --set mcpPostgres.enabled=true \
+    --set mcpPostgres.image.tag=$TAG \
     --set mcpChroma.enabled=true \
+    --set mcpChroma.image.tag=$TAG \
     --set mcpRegistry.enabled=true \
+    --set mcpRegistry.image.tag=$TAG \
     --set secrets.geminiApiKey="${GEMINI_API_KEY}" \
     --set api.env.MOCK_GEMINI="true" \
     --create-namespace \
-    --namespace $NAMESPACE \
-    --wait \
-    --timeout 10m
+    --namespace $NAMESPACE
+
+echo "Restarting deployments to pick up new images..."
+# Rollout might not be strictly necessary with new tags, but good for safety
+kubectl rollout restart deployment sql-insight-engine-api -n $NAMESPACE
+kubectl rollout restart deployment sql-insight-engine-mcp-postgres -n $NAMESPACE
+kubectl rollout restart deployment sql-insight-engine-mcp-chroma -n $NAMESPACE
+kubectl rollout restart deployment sql-insight-engine-mcp-registry -n $NAMESPACE
+kubectl rollout restart deployment sql-insight-engine-ui -n $NAMESPACE
 
 echo ""
 echo "=== Applications Deployment Complete ==="

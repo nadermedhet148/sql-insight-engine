@@ -15,7 +15,8 @@ SAGA_COMPLETION_TOTAL = Counter(
 SAGA_DURATION_SECONDS = Histogram(
     "saga_duration_seconds",
     "Duration of completed sagas in seconds",
-    ["status"]
+    ["status"],
+    buckets=[0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0]
 )
 
 class SagaStateStore:

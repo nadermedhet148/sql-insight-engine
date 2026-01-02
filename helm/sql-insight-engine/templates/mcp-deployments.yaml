@@ -47,6 +47,9 @@ metadata:
 spec:
   type: ClusterIP
   sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10
   ports:
   - port: {{ .Values.mcpPostgres.service.port }}
     targetPort: http
@@ -106,6 +109,9 @@ metadata:
 spec:
   type: ClusterIP
   sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10
   ports:
   - port: {{ .Values.mcpChroma.service.port }}
     targetPort: http
@@ -160,6 +166,10 @@ metadata:
     app.kubernetes.io/component: mcp-registry
 spec:
   type: ClusterIP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10
   ports:
   - port: {{ .Values.mcpRegistry.service.port }}
     targetPort: http

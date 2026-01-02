@@ -209,7 +209,7 @@ def run_load_test(api_url: str, target_rps: int, duration_seconds: int):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Load Test SQL Insight Engine')
-    parser.add_argument('--rps', type=int, default=100, help='Requests per second (default: 100)')
+    parser.add_argument('--rps', type=int, default=10000, help='Requests per second (default: 100)')
     parser.add_argument('--duration', type=int, default=600, help='Duration in seconds (default: 600)')
     parser.add_argument('--api-url', type=str, default=DEFAULT_API_URL, help='API Base URL')
     args = parser.parse_args()

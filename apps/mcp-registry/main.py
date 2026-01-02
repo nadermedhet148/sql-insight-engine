@@ -19,7 +19,8 @@ class MCPServerInfo(BaseModel):
     name: str
     url: str
     last_seen: float = 0.0
-    status: str = "unknown" # New field
+    status: str = "unknown"
+    is_static: bool = False # New field to prevent deletion of static config
 
 REDIS_HOST = os.getenv("REDIS_HOST", "redis")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
@@ -50,7 +51,8 @@ async def startup_event():
                     name=svc["name"],
                     url=svc["url"],
                     last_seen=time.time(),
-                    status="unknown" # Will be checked by monitor
+                    status="unknown", # Will be checked by monitor
+                    is_static=True
                 )
                 # Store with a specific prefix or flag to identify as static if needed, 
                 # but for now standard processing is fine as long as we keep updating it.
@@ -137,8 +139,15 @@ async def monitor_servers():
                         # Only save (update last_seen/status) if healthy
                         r.hset(REDIS_KEY, key, server.model_dump_json())
                     else:
-                        print(f"Removing unhealthy server: {server.name} at {key} (Status: {new_status})")
-                        r.hdel(REDIS_KEY, key)
+                        print(f"Server {server.name} at {key} is unhealthy (Status: {new_status})")
+                        if server.is_static:
+                             print(f"Keeping static server {server.name} despite failure.")
+                             if server.status != new_status:
+                                 server.status = new_status
+                                 r.hset(REDIS_KEY, key, server.model_dump_json())
+                        else:
+                             print(f"Removing unhealthy server: {server.name} at {key}")
+                             r.hdel(REDIS_KEY, key)
                         
             except Exception as e:
                 print(f"Error in monitor loop: {e}")

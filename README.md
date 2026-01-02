@@ -249,3 +249,46 @@ This creates:
 1. Open the UI: `python apps/sql-insight-engine/serve_ui.py`
 2. Create a user and configure database connection
 3. Ask questions like: "What are my top 5 customers by total order amount?"
+
+---
+
+## Helpful Commands
+
+### Check Logs
+```bash
+# API Logs
+kubectl logs -n sql-insight-engine -l app.kubernetes.io/component=api --tail=100 -f
+
+# MCP Postgres Logs
+kubectl logs -n sql-insight-engine -l app.kubernetes.io/component=mcp-postgres --tail=100 -f
+
+# MCP Chroma Logs
+kubectl logs -n sql-insight-engine -l app.kubernetes.io/component=mcp-chroma --tail=100 -f
+
+# MCP Registry Logs
+kubectl logs -n sql-insight-engine -l app.kubernetes.io/component=mcp-registry --tail=100 -f
+```
+
+### Port Forwarding
+```bash
+# Main API (http://localhost:8000)
+kubectl port-forward svc/sql-insight-engine-api 8000:8000 -n sql-insight-engine
+
+# Main API Load Test Port (http://localhost:8005)
+kubectl port-forward svc/sql-insight-engine-api 8005:8000 -n sql-insight-engine
+
+# UI (http://localhost:8080)
+kubectl port-forward svc/sql-insight-engine-ui 8080:80 -n sql-insight-engine
+
+# RabbitMQ Dashboard (http://localhost:15672) - guest/guest
+kubectl port-forward svc/sql-insight-engine-rabbitmq 15672:15672 -n sql-insight-engine
+
+# Grafana (http://localhost:3000) - admin/admin
+kubectl port-forward svc/sql-insight-engine-grafana 3000:3000 -n sql-insight-engine
+
+# Prometheus (http://localhost:9090)
+kubectl port-forward svc/sql-insight-engine-prometheus 9090:9090 -n sql-insight-engine
+
+# MCP Registry (http://localhost:8010)
+kubectl port-forward svc/sql-insight-engine-mcp-registry 8010:8010 -n sql-insight-engine
+```

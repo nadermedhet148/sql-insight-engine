@@ -54,29 +54,42 @@ class GenericMCPClient:
 
     async def call_tool(self, tool_name: str, arguments: Dict[str, Any]) -> MCPToolResult:
         start_time = time.time()
-        try:
-            async with sse_client(self.sse_url) as (read, write):
-                async with ClientSession(read, write) as session:
-                    print(f"[TRACE] session initializing for {tool_name}...")
-                    await asyncio.wait_for(session.initialize(), timeout=5.0)
-                    print(f"[TRACE] session initialized. calling {tool_name} with {arguments}...")
-                    filtered_args = {k: v for k, v in arguments.items() if v is not None}
-                    result = await asyncio.wait_for(session.call_tool(tool_name, filtered_args), timeout=30.0)
-                    print(f"[TRACE] {tool_name} returned success.")
-                    
-                    content_text = ""
-                    for content in result.content:
-                        if hasattr(content, "text"):
-                            content_text += content.text
-                            
-                    return MCPToolResult(
-                        success=not result.isError if hasattr(result, "isError") else True,
-                        content=content_text
-                    )
-        except asyncio.TimeoutError:
-            return MCPToolResult(success=False, content="", error="MCP call timed out")
-        except Exception as e:
-            return MCPToolResult(success=False, content="", error=str(e))
+        # Retry logic for tool calls to handle transient network issues or pod rotation
+        retries = 2
+        for attempt in range(retries + 1):
+            try:
+                print(f"[TRACE] Connecting to {self.sse_url} for tool {tool_name} (Attempt {attempt+1})")
+                async with sse_client(self.sse_url) as (read, write):
+                    async with ClientSession(read, write) as session:
+                        print(f"[TRACE] session initializing for {tool_name}...")
+                        await asyncio.wait_for(session.initialize(), timeout=5.0)
+                        print(f"[TRACE] session initialized. calling {tool_name} with {arguments}...")
+                        filtered_args = {k: v for k, v in arguments.items() if v is not None}
+                        result = await asyncio.wait_for(session.call_tool(tool_name, filtered_args), timeout=30.0)
+                        print(f"[TRACE] {tool_name} returned success.")
+                        
+                        content_text = ""
+                        for content in result.content:
+                            if hasattr(content, "text"):
+                                content_text += content.text
+                                
+                        return MCPToolResult(
+                            success=not result.isError if hasattr(result, "isError") else True,
+                            content=content_text
+                        )
+            except asyncio.TimeoutError:
+                print(f"[TRACE] Timeout calling {tool_name} on {self.sse_url}")
+                if attempt == retries:
+                    return MCPToolResult(success=False, content="", error="MCP call timed out")
+            except Exception as e:
+                print(f"[TRACE] Error calling {tool_name} on {self.sse_url}: {e}")
+                if attempt == retries:
+                    return MCPToolResult(success=False, content="", error=str(e))
+                
+            # Short sleep before retry
+            await asyncio.sleep(0.5)
+            
+        return MCPToolResult(success=False, content="", error="Unknown error")
 
 class DynamicMCPManager:
     def __init__(self, registry_url: str = None):
