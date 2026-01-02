@@ -25,6 +25,22 @@ spec:
         ports:
         - name: http
           containerPort: {{ .Values.mcpPostgres.service.port }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
         env:
 
         - name: MCP_DB_URL
@@ -87,6 +103,22 @@ spec:
         ports:
         - name: http
           containerPort: {{ .Values.mcpChroma.service.port }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
         env:
 
         - name: CHROMA_HOST
@@ -149,6 +181,22 @@ spec:
         ports:
         - name: http
           containerPort: {{ .Values.mcpRegistry.service.port }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
         env:
         - name: REDIS_HOST
           value: "{{ include "sql-insight-engine.fullname" . }}-redis"

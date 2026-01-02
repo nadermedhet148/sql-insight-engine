@@ -98,8 +98,12 @@ class DynamicMCPManager:
         self.clients: Dict[str, GenericMCPClient] = {}
         self.tools_map: Dict[str, tuple[GenericMCPClient, Any]] = {}  # tool_name -> (client, Tool object)
 
-    async def refresh_tools(self, retries=3, delay=2):
+    async def refresh_tools(self, retries=3, delay=2, force=False):
         """Fetch all servers from registry and their tools with retries"""
+        # If not forced and we have tools and last refresh was recent (< 60s), skip
+        if not force and self.tools_map and (time.time() - getattr(self, 'last_refresh_time', 0) < 60):
+            return
+
         for attempt in range(retries):
             try:
                 print(f"Refreshing MCP tools (attempt {attempt+1}/{retries})...")
@@ -110,7 +114,7 @@ class DynamicMCPManager:
                         if attempt < retries - 1:
                             await asyncio.sleep(delay)
                             continue
-                        return
+                        raise Exception(f"Registry returned status {response.status_code}")
                     
                     servers = response.json()
                     print(f"Registry returned {len(servers)} servers: {[s['name'] for s in servers]}")
@@ -126,6 +130,7 @@ class DynamicMCPManager:
                         new_clients[name] = mcp_client
                         
                         try:
+                            # Use internal retry of list_tools
                             tools = await mcp_client.list_tools()
                             print(f"Server {name} reported {len(tools)} tools")
                             for t in tools:
@@ -133,18 +138,29 @@ class DynamicMCPManager:
                                 print(f"Discovered tool: {t.name} from {name}")
                         except Exception as e:
                             print(f"Failed to list tools from {name}: {e}")
+                            # If we have this server in our old cache, maybe keep its old tools?
+                            # For now, let's just skip this server's tools for this refresh cycle
+                            # unless we implement more complex partial updates.
                     
-                    self.clients = new_clients
-                    self.tools_map = new_tools_map
-                    print(f"MCP Refresh complete. Total tools: {len(self.tools_map)}")
-                    return # Success
+                    # Only update if we found anything (or if actual registry is empty)
+                    if new_tools_map or not servers:
+                        self.clients = new_clients
+                        self.tools_map = new_tools_map
+                        self.last_refresh_time = time.time()
+                        print(f"MCP Refresh complete. Total tools: {len(self.tools_map)}")
+                        return # Success
+                    else:
+                        print("Warning: aggregated 0 tools, but servers were found. Keeping old cache.")
+                        return 
                     
             except Exception as e:
                 print(f"Error refreshing MCP tools: {e}")
                 if attempt < retries - 1:
                     await asyncio.sleep(delay)
         
-        print("Max retries reached for MCP refresh.")
+        print("Max retries reached for MCP refresh. Using cached tools if available.")
+        if not self.tools_map:
+             print("CRITICAL: No tools available in cache.")
 
     def get_gemini_tools(self, message: Any = None, context: Dict[str, Any] = None) -> List[Callable]:
         """Convert all discovered tools into Gemini-compatible functions"""
@@ -251,7 +267,7 @@ def get_discovered_tools(message: Any = None, context: Dict[str, Any] = None) ->
         # We use a simplified refresh if we're already in a loop
         import nest_asyncio
         nest_asyncio.apply()
-        asyncio.run(mcp_manager.refresh_tools(retries=1, delay=0.5))
+        asyncio.run(mcp_manager.refresh_tools(retries=1, delay=0.5, force=False))
     except Exception as e:
         print(f"[DEBUG] Proactive refresh failed: {e}")
     

@@ -35,7 +35,7 @@ class QueueingChannel:
         return getattr(self.channel, name)
 
 class BaseConsumer(ABC):
-    def __init__(self, queue_name: str, host: str = 'localhost', prefetch_count: int = 20):
+    def __init__(self, queue_name: str, host: str = 'localhost', prefetch_count: int = 100):
         self.queue_name = queue_name
         self.host = host or "localhost"
         self.prefetch_count = prefetch_count
