@@ -23,6 +23,23 @@ from agentic_sql.saga.consumers.metrics import (
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 
+# Global engine cache: keys are DB URL strings, values are Engine objects
+_db_engines = {}
+
+def get_or_create_engine(db_url: str):
+    """Get existing engine or create a new one with pooling"""
+    global _db_engines
+    if db_url not in _db_engines:
+        # Create engine with reasonable pool settings
+        _db_engines[db_url] = create_engine(
+            db_url, 
+            connect_args={'connect_timeout': 5},
+            pool_size=10, 
+            max_overflow=20,
+            pool_recycle=3600
+        )
+    return _db_engines[db_url]
+
 def execute_query_native(db_config_dict: Dict[str, Any], sql: str) -> tuple[bool, str, str]:
     """Execute SQL query directly against the database using SQLAlchemy"""
     db_url = f"postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}"
@@ -59,8 +76,8 @@ def execute_query_native(db_config_dict: Dict[str, Any], sql: str) -> tuple[bool
     print(f"[TRACE] Executing native SQL: {sql}")
 
     try:
-        # Create engine with a short timeout
-        engine = create_engine(db_url, connect_args={'connect_timeout': 5})
+        # Reuse engine from cache
+        engine = get_or_create_engine(db_url)
         with engine.connect() as connection:
             result = connection.execute(text(sql))
             
@@ -89,7 +106,7 @@ from core.infra.consumer import BaseConsumer
 
 class QueryExecutorConsumer(BaseConsumer):
     def __init__(self, host: str = None):
-        super().__init__(queue_name=SagaPublisher.QUEUE_EXECUTE_QUERY, host=host, prefetch_count=100)
+        super().__init__(queue_name=SagaPublisher.QUEUE_EXECUTE_QUERY, host=host, prefetch_count=2)
 
     def process_message(self, ch, method, properties, body):
         process_query_execution(ch, method, properties, body)

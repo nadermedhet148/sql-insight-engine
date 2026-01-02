@@ -11,6 +11,8 @@ from typing import Optional
 from agentic_sql.saga.messages import SagaBaseMessage, message_to_json
 
 
+import threading
+
 class SagaPublisher:
     """Publisher for saga messages"""
     
@@ -26,6 +28,7 @@ class SagaPublisher:
         self.password = os.getenv("RABBITMQ_PASSWORD", "guest")
         self.connection = None
         self.channel = None
+        self._lock = threading.Lock()
     
     def connect(self):
         """Establish connection to RabbitMQ"""
@@ -56,7 +59,7 @@ class SagaPublisher:
             self.channel.queue_declare(queue=queue, durable=True)
     
     def _ensure_connection(self):
-        """Ensure we have a valid connection and channel"""
+        """Ensure we have a valid connection and channel. Must be called under lock."""
         if self.connection is None or self.connection.is_closed:
             self.connect()
         elif self.channel is None or self.channel.is_closed:
@@ -65,49 +68,50 @@ class SagaPublisher:
     
     def publish(self, queue: str, message: SagaBaseMessage):
         """Publish message to specified queue"""
-        self._ensure_connection()
-        
-        message_body = message_to_json(message)
-        
-        try:
-            self.channel.basic_publish(
-                exchange='',
-                routing_key=queue,
-                body=message_body,
-                properties=pika.BasicProperties(
-                    delivery_mode=2,  # Make message persistent
-                    content_type='application/json',
-                    headers={
-                        'saga_id': message.saga_id,
-                        'user_id': str(message.user_id),
-                        'account_id': message.account_id
-                    }
-                )
-            )
-        except (pika.exceptions.ChannelClosedByBroker, 
-                pika.exceptions.ChannelWrongStateError,
-                pika.exceptions.StreamLostError) as e:
-            print(f"[SAGA PUBLISHER] Channel error, reconnecting: {e}")
-            self.connection = None
-            self.channel = None
+        with self._lock:
             self._ensure_connection()
-            # Retry once
-            self.channel.basic_publish(
-                exchange='',
-                routing_key=queue,
-                body=message_body,
-                properties=pika.BasicProperties(
-                    delivery_mode=2,
-                    content_type='application/json',
-                    headers={
-                        'saga_id': message.saga_id,
-                        'user_id': str(message.user_id),
-                        'account_id': message.account_id
-                    }
+            
+            message_body = message_to_json(message)
+            
+            try:
+                self.channel.basic_publish(
+                    exchange='',
+                    routing_key=queue,
+                    body=message_body,
+                    properties=pika.BasicProperties(
+                        delivery_mode=2,  # Make message persistent
+                        content_type='application/json',
+                        headers={
+                            'saga_id': message.saga_id,
+                            'user_id': str(message.user_id),
+                            'account_id': message.account_id
+                        }
+                    )
                 )
-            )
-        
-        print(f"[SAGA PUBLISHER] Published to '{queue}' - Saga ID: {message.saga_id}")
+            except (pika.exceptions.ChannelClosedByBroker, 
+                    pika.exceptions.ChannelWrongStateError,
+                    pika.exceptions.StreamLostError) as e:
+                print(f"[SAGA PUBLISHER] Channel error, reconnecting: {e}")
+                self.connection = None
+                self.channel = None
+                self._ensure_connection()
+                # Retry once
+                self.channel.basic_publish(
+                    exchange='',
+                    routing_key=queue,
+                    body=message_body,
+                    properties=pika.BasicProperties(
+                        delivery_mode=2,
+                        content_type='application/json',
+                        headers={
+                            'saga_id': message.saga_id,
+                            'user_id': str(message.user_id),
+                            'account_id': message.account_id
+                        }
+                    )
+                )
+            
+            print(f"[SAGA PUBLISHER] Published to '{queue}' - Saga ID: {message.saga_id}")
     
     def publish_query_generation(self, message: SagaBaseMessage):
         """Publish to query generation queue (Step 1)"""
@@ -127,9 +131,10 @@ class SagaPublisher:
     
     def close(self):
         """Close connection"""
-        if self.connection and not self.connection.is_closed:
-            self.connection.close()
-            print("[SAGA PUBLISHER] Connection closed")
+        with self._lock:
+            if self.connection and not self.connection.is_closed:
+                self.connection.close()
+                print("[SAGA PUBLISHER] Connection closed")
 
 
 # Singleton instance
