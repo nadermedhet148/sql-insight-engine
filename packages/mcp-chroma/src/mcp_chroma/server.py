@@ -90,6 +90,19 @@ class ChromaMCPServer:
                         },
                         "required": ["query", "account_id"]
                     }
+                ),
+                Tool(
+                    name="search_relevant_knowledgebase",
+                    description="Search for relevant business knowledge or documentation",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "The search query or keyword"},
+                            "account_id": {"type": "string", "description": "The account ID to filter by"},
+                            "n_results": {"type": "integer", "default": 3, "description": "Number of results to return"}
+                        },
+                        "required": ["query", "account_id"]
+                    }
                 )
             ]
 
@@ -101,19 +114,22 @@ class ChromaMCPServer:
             logger.info(f"Tool call: {name} | Args: {arguments}")
             
             try:
-                if name == "search_relevant_schema":
+                if name in ["search_relevant_schema", "search_relevant_knowledgebase"]:
                     query = arguments["query"]
                     account_id = str(arguments["account_id"])
-                    n_results = int(arguments.get("n_results", 2))
+                    n_results = int(arguments.get("n_results", 2 if name == "search_relevant_schema" else 3))
+                    
+                    # Determine collection based on tool name
+                    collection_name = "account_schema_info" if name == "search_relevant_schema" else "knowledgebase"
                     
                     # 1. Get embedding
                     logger.info(f"Generating embedding for query: {query[:50]}...")
                     embedding = await self._get_embedding_from_mcp(query)
                     
                     # 2. Query Chroma
-                    logger.info(f"Querying Chroma for account: {account_id}, results limit: {n_results}")
+                    logger.info(f"Querying Chroma collection '{collection_name}' for account: {account_id}, results limit: {n_results}")
                     client = self._get_client()
-                    collection = client.get_or_create_collection(name="account_schema_info")
+                    collection = client.get_or_create_collection(name=collection_name)
                     results = collection.query(
                         query_embeddings=[embedding],
                         n_results=n_results,
@@ -121,12 +137,12 @@ class ChromaMCPServer:
                     )
                     
                     if not results or not results.get('documents') or not results['documents'][0]:
-                        logger.info("No relevant schema found in Chroma")
-                        result = [TextContent(type="text", text="No relevant schema found.")]
+                        logger.info(f"No relevant items found in {collection_name}")
+                        result = [TextContent(type="text", text="No relevant information found.")]
                     else:
                         docs = results['documents'][0]
-                        logger.info(f"Found {len(docs)} relevant schema documents")
-                        formatted = "# Relevant Schema\n\n" + "\n".join(f"- {d}" for d in docs)
+                        logger.info(f"Found {len(docs)} relevant documents in {collection_name}")
+                        formatted = f"# Relevant {collection_name.replace('_', ' ').title()}\n\n" + "\n".join(f"- {d}" for d in docs)
                         result = [TextContent(type="text", text=formatted)]
                 else:
                     logger.warning(f"Unknown tool requested: {name}")

@@ -4,6 +4,19 @@ import redis
 import os
 from typing import Dict, Optional
 from datetime import datetime, timedelta
+from prometheus_client import Counter, Histogram
+
+# Defining Metrics
+SAGA_COMPLETION_TOTAL = Counter(
+    "saga_completion_total",
+    "Total number of completed sagas by status",
+    ["status"]
+)
+SAGA_DURATION_SECONDS = Histogram(
+    "saga_duration_seconds",
+    "Duration of completed sagas in seconds",
+    ["status"]
+)
 
 class SagaStateStore:
     
@@ -12,14 +25,45 @@ class SagaStateStore:
         self._redis = redis.Redis(host=host, port=port, db=db, decode_responses=True)
         self._ttl_seconds = 3600  # 1 hour TTL
     
+    def _record_metrics(self, status: str, started_at_iso: Optional[str]):
+        if status in ["completed", "success", "error", "failed"]:
+            metric_status = "success" if status in ["completed", "success"] else "failed"
+            SAGA_COMPLETION_TOTAL.labels(status=metric_status).inc()
+            
+            if started_at_iso:
+                try:
+                    start_dt = datetime.fromisoformat(started_at_iso)
+                    duration = (datetime.utcnow() - start_dt).total_seconds()
+                    SAGA_DURATION_SECONDS.labels(status=metric_status).observe(duration)
+                    print(f"[STATE STORE] Recorded duration {duration:.2f}s for status {status}")
+                except Exception as e:
+                    print(f"[STATE STORE] Failed to record duration: {e}")
+
     def store_result(self, saga_id: str, result: dict, status: Optional[str] = None):
+        final_status = status if status else ("completed" if result.get("success", False) else "error")
+        
+        # Try to retrieve existing start time
+        existing_data_str = self._redis.get(f"saga:{saga_id}")
+        started_at = None
+        if existing_data_str:
+            try:
+                existing = json.loads(existing_data_str)
+                started_at = existing.get("started_at")
+            except:
+                pass
+        
         data = {
             "result": result,
             "timestamp": datetime.utcnow().isoformat(),
-            "status": status if status else ("completed" if result.get("success", False) else "error")
+            "status": final_status
         }
+        if started_at:
+            data["started_at"] = started_at
+            
         self._redis.setex(f"saga:{saga_id}", self._ttl_seconds, json.dumps(data))
         print(f"[STATE STORE] Stored result for saga {saga_id}")
+        
+        self._record_metrics(final_status, started_at)
     
     def get_result(self, saga_id: str) -> Optional[dict]:
         data_str = self._redis.get(f"saga:{saga_id}")
@@ -38,9 +82,11 @@ class SagaStateStore:
         return data.get("status", "pending")
     
     def mark_pending(self, saga_id: str, initial_data: dict = None):
+        now_iso = datetime.utcnow().isoformat()
         data = {
             "result": initial_data or {},
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": now_iso,
+            "started_at": now_iso,
             "status": "pending"
         }
         self._redis.setex(f"saga:{saga_id}", self._ttl_seconds, json.dumps(data))
@@ -54,6 +100,8 @@ class SagaStateStore:
             data["timestamp"] = datetime.utcnow().isoformat()
             if status:
                 data["status"] = status
+                self._record_metrics(status, data.get("started_at"))
+
             # Save back with same TTL
             self._redis.setex(f"saga:{saga_id}", self._ttl_seconds, json.dumps(data))
             print(f"[STATE STORE] Updated progress for saga {saga_id}")

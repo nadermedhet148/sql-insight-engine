@@ -28,12 +28,82 @@
                 "h": 1,
                 "w": 24,
                 "x": 0,
-                "y": 0
+                "y": 36
             },
-            "id": 100,
+            "id": 104,
             "panels": [],
-            "title": "MCP Tool Usage",
+            "title": "Saga Metrics",
             "type": "row"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 37
+            },
+            "id": 105,
+             "options": {
+                "legend": {
+                    "calcs": [
+                        "sum"
+                    ],
+                    "displayMode": "table",
+                    "placement": "right",
+                    "showLegend": true
+                }
+            },
+            "targets": [
+                {
+                    "expr": "sum by (status) (increase(saga_completion_total[5m]))",
+                    "legendFormat": "{{status}}",
+                    "refId": "A"
+                }
+            ],
+            "title": "Saga Completion (Last 5m)",
+            "type": "timeseries"
+        },
+        {
+            "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+            },
+            "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 12,
+                "y": 37
+            },
+            "id": 106,
+             "options": {
+                "legend": {
+                    "calcs": [
+                        "mean",
+                        "max"
+                    ],
+                    "displayMode": "table",
+                    "placement": "right",
+                    "showLegend": true
+                }
+            },
+            "targets": [
+                {
+                    "expr": "sum(rate(saga_duration_seconds_sum[5m])) / sum(rate(saga_duration_seconds_count[5m]))",
+                    "legendFormat": "avg duration",
+                    "refId": "A"
+                },
+                {
+                    "expr": "histogram_quantile(0.95, sum(rate(saga_duration_seconds_bucket[5m])) by (le))",
+                    "legendFormat": "p95 duration",
+                    "refId": "B"
+                }
+            ],
+            "title": "Saga Duration (Avg & p95)",
+            "type": "timeseries"
         },
         {
             "datasource": {

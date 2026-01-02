@@ -58,6 +58,8 @@ spec:
           value: "http://{{ include "sql-insight-engine.fullname" . }}-mcp-registry:{{ .Values.mcpRegistry.service.port }}"
         - name: PYTHONUNBUFFERED
           value: "{{ .Values.api.env.pythonUnbuffered }}"
+        - name: MOCK_GEMINI
+          value: {{ .Values.api.env.MOCK_GEMINI | default "false" | quote }}
         resources:
           {{- toYaml .Values.api.resources | nindent 10 }}
         livenessProbe:

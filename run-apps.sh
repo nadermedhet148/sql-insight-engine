@@ -21,9 +21,9 @@ docker tag sql-insight-engine-mcp-postgres:latest sql-insight-engine-mcp-postgre
 docker tag sql-insight-engine-mcp-chroma:latest sql-insight-engine-mcp-chroma:latest
 docker tag sql-insight-engine-mcp-registry:latest sql-insight-engine-mcp-registry:latest
 
-for img in $APP_IMAGES; do
-    import_image_to_k3s "$img"
-done
+# for img in $APP_IMAGES; do
+#     import_image_to_k3s "$img"
+# done
 
 # 2. Check if release exists
 REUSE_VALUES=""
@@ -45,6 +45,7 @@ helm upgrade --install sql-insight-engine ./helm/sql-insight-engine \
     --set mcpChroma.enabled=true \
     --set mcpRegistry.enabled=true \
     --set secrets.geminiApiKey="${GEMINI_API_KEY}" \
+    --set api.env.MOCK_GEMINI="true" \
     --create-namespace \
     --namespace $NAMESPACE \
     --wait \
