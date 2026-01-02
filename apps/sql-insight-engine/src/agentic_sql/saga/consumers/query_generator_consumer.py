@@ -116,7 +116,7 @@ from core.infra.consumer import BaseConsumer
 
 class QueryGeneratorConsumer(BaseConsumer):
     def __init__(self, host: str = None):
-        super().__init__(queue_name=SagaPublisher.QUEUE_GENERATE_QUERY, host=host, prefetch_count=100)
+        super().__init__(queue_name=SagaPublisher.QUEUE_GENERATE_QUERY, host=host, prefetch_count=10)
 
     def process_message(self, ch, method, properties, body):
         process_query_generation(ch, method, properties, body)

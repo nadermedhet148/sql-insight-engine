@@ -9,7 +9,7 @@ global:
 # API Service
 api:
   enabled: false
-  replicaCount: 3
+  replicaCount: 6
   image:
     repository: sql-insight-engine-api
     tag: latest
@@ -31,7 +31,7 @@ api:
 # MCP Services
 mcpPostgres:
   enabled: false
-  replicaCount: 3
+  replicaCount: 6
   image:
     repository: sql-insight-engine-mcp-postgres
     tag: latest
@@ -48,7 +48,7 @@ mcpPostgres:
 
 mcpChroma:
   enabled: false
-  replicaCount: 3
+  replicaCount: 6
   image:
     repository: sql-insight-engine-mcp-chroma
     tag: latest

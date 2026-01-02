@@ -252,6 +252,26 @@ This creates:
 
 ---
 
+## ☸️ Managing Deployments (Helm)
+
+### Apply Configuration Changes
+If you modify `values.yaml` (e.g., scaling replicas), apply changes without rebuilding images:
+```bash
+helm upgrade --install sql-insight-engine ./helm/sql-insight-engine \
+    --namespace sql-insight-engine \
+    --reuse-values
+```
+
+### Apply Code Changes
+If you modify application code (e.g., Python files), you must rebuild the image, import it into the cluster, and restart the deployment:
+
+```bash
+# Rebuild and Deploy API
+docker compose build api && \
+docker save sql-insight-engine-api:latest | sudo k3s ctr images import - && \
+kubectl rollout restart deployment sql-insight-engine-api -n sql-insight-engine
+```
+
 ## Helpful Commands
 
 ### Check Logs
