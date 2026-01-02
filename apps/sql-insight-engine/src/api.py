@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI):
     await asyncio.sleep(5)  # Give RabbitMQ a moment to fully initialize
     
     # Start multiple workers for each consumer to handle parallel processing
-    num_workers = 10 
+    num_workers = 1 
     
     for name, starter_func in consumers:
         try:

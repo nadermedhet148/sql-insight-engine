@@ -35,11 +35,11 @@ class QueueingChannel:
         return getattr(self.channel, name)
 
 class BaseConsumer(ABC):
-    def __init__(self, queue_name: str, host: str = 'localhost', prefetch_count: int = 2):
+    def __init__(self, queue_name: str, host: str = 'localhost', prefetch_count: int = 20):
         self.queue_name = queue_name
         self.host = host or "localhost"
         self.prefetch_count = prefetch_count
-        self.executor = ThreadPoolExecutor(max_workers=10)
+        self.executor = ThreadPoolExecutor(max_workers=prefetch_count)
         self.action_queue = queue.Queue()
         self.running = True
         self.connection = None

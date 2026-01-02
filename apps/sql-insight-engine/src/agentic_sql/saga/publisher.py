@@ -68,7 +68,11 @@ class SagaPublisher:
     
     def publish(self, queue: str, message: SagaBaseMessage):
         """Publish message to specified queue"""
+        # start_time = time.time()
         with self._lock:
+            # acquired_time = time.time()
+            # if (acquired_time - start_time) > 0.1:
+            #     print(f"[SAGA PUBLISHER] Lock acquisition took {acquired_time - start_time:.4f}s")
             self._ensure_connection()
             
             message_body = message_to_json(message)

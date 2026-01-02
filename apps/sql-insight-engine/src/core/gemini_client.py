@@ -19,9 +19,6 @@ class MockChat:
         import random
         import time
         
-        # 1. Fixed 3s latency as requested
-        print(f"[MockGemini] Simulating fixed latency of 3.0s...")
-        time.sleep(3.0)
         
         # 2. Simulate tool execution
         if self.tools:

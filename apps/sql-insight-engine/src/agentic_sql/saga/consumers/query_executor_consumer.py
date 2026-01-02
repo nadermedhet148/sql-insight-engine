@@ -106,7 +106,7 @@ from core.infra.consumer import BaseConsumer
 
 class QueryExecutorConsumer(BaseConsumer):
     def __init__(self, host: str = None):
-        super().__init__(queue_name=SagaPublisher.QUEUE_EXECUTE_QUERY, host=host, prefetch_count=2)
+        super().__init__(queue_name=SagaPublisher.QUEUE_EXECUTE_QUERY, host=host, prefetch_count=20)
 
     def process_message(self, ch, method, properties, body):
         process_query_execution(ch, method, properties, body)
