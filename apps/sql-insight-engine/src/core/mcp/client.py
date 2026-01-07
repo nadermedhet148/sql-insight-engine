@@ -5,10 +5,13 @@ import json
 import time
 import httpx
 import inspect
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Callable
 from dataclasses import dataclass
 from mcp import ClientSession
 from mcp.client.sse import sse_client
+
+_mcp_executor = ThreadPoolExecutor(max_workers=50, thread_name_prefix="mcp_tool_")
 
 @dataclass
 class MCPToolResult:
@@ -249,8 +252,25 @@ class DynamicMCPManager:
         return gemini_tools
 
     def _run_tool_sync(self, client: GenericMCPClient, tool_name: str, kwargs: Dict[str, Any]) -> str:
+        """Execute MCP tool call in a thread pool for parallel execution.
+        
+        Each thread creates its own event loop via asyncio.run(), allowing
+        multiple tool calls to execute truly in parallel across requests.
+        """
+        def _execute_in_thread():
+            try:
+                result = asyncio.run(client.call_tool(tool_name, kwargs))
+                if isinstance(result, MCPToolResult):
+                    return result.content if result.success else f"Error: {result.error}"
+                return str(result)
+            except Exception as e:
+                return f"Error: {e}"
+        
         try:
-            return asyncio.run(client.call_tool(tool_name, kwargs))
+            # Submit to thread pool and wait for result
+            future = _mcp_executor.submit(_execute_in_thread)
+            # Timeout matches the tool call timeout (30s) plus overhead
+            return future.result(timeout=35.0)
         except Exception as e:
             return f"Error: {e}"
 
