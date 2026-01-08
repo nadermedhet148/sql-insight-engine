@@ -5,13 +5,27 @@ import json
 import time
 import httpx
 import inspect
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Callable
 from dataclasses import dataclass
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 
-_mcp_executor = ThreadPoolExecutor(max_workers=50, thread_name_prefix="mcp_tool_")
+_mcp_executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="mcp_tool_")
+
+# Per-server connection limiting to prevent overwhelming MCP services
+# Max concurrent connections per SSE URL (each MCP server)
+_MAX_CONNECTIONS_PER_SERVER = 20
+_server_semaphores: Dict[str, threading.Semaphore] = {}
+_semaphore_lock = threading.Lock()
+
+def _get_server_semaphore(sse_url: str) -> threading.Semaphore:
+    """Get or create a semaphore for a specific MCP server URL."""
+    with _semaphore_lock:
+        if sse_url not in _server_semaphores:
+            _server_semaphores[sse_url] = threading.Semaphore(_MAX_CONNECTIONS_PER_SERVER)
+        return _server_semaphores[sse_url]
 
 @dataclass
 class MCPToolResult:
@@ -256,21 +270,27 @@ class DynamicMCPManager:
         
         Each thread creates its own event loop via asyncio.run(), allowing
         multiple tool calls to execute truly in parallel across requests.
+        Uses per-server semaphores to limit concurrent connections.
         """
+        # Get semaphore for this specific MCP server to limit concurrent connections
+        semaphore = _get_server_semaphore(client.sse_url)
+        
         def _execute_in_thread():
-            try:
-                result = asyncio.run(client.call_tool(tool_name, kwargs))
-                if isinstance(result, MCPToolResult):
-                    return result.content if result.success else f"Error: {result.error}"
-                return str(result)
-            except Exception as e:
-                return f"Error: {e}"
+            # Acquire semaphore to limit concurrent connections per server
+            with semaphore:
+                try:
+                    result = asyncio.run(client.call_tool(tool_name, kwargs))
+                    if isinstance(result, MCPToolResult):
+                        return result.content if result.success else f"Error: {result.error}"
+                    return str(result)
+                except Exception as e:
+                    return f"Error: {e}"
         
         try:
             # Submit to thread pool and wait for result
             future = _mcp_executor.submit(_execute_in_thread)
-            # Timeout matches the tool call timeout (30s) plus overhead
-            return future.result(timeout=35.0)
+            # Timeout matches the tool call timeout (30s) plus overhead + semaphore wait
+            return future.result(timeout=45.0)
         except Exception as e:
             return f"Error: {e}"
 
@@ -281,15 +301,14 @@ async def initialize_mcp():
     await mcp_manager.refresh_tools()
 
 def get_discovered_tools(message: Any = None, context: Dict[str, Any] = None) -> List[Callable]:
-    """Helper to get tools from the global manager - refreshed on every call"""
-    print("[DEBUG] Proactive MCP tool refresh for request...")
-    try:
-        # We use a simplified refresh if we're already in a loop
-        import nest_asyncio
-        nest_asyncio.apply()
-        asyncio.run(mcp_manager.refresh_tools(retries=1, delay=0.5, force=False))
-    except Exception as e:
-        print(f"[DEBUG] Proactive refresh failed: {e}")
+    """Helper to get tools from the global manager - uses cached tools.
+    
+    Tools are discovered at startup via initialize_mcp() and cached.
+    No refresh is done per-request to avoid SSE connection overhead.
+    """
+    # Only log if no tools are cached (should only happen before init)
+    if not mcp_manager.tools_map:
+        print("[DEBUG] No cached tools available - will use empty tool list")
     
     return mcp_manager.get_gemini_tools(message, context)
 

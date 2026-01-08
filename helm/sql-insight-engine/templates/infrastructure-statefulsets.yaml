@@ -125,7 +125,7 @@ spec:
     app.kubernetes.io/component: rabbitmq
 {{- end }}
 ---
-{{- if .Values.chromadb.enabled }}
+{{- if and .Values.chromadb.enabled (ne .Values.chromadb.mode "distributed") }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -153,6 +153,10 @@ spec:
         ports:
         - name: http
           containerPort: {{ .Values.chromadb.service.port }}
+        {{- if .Values.chromadb.resources }}
+        resources:
+          {{- toYaml .Values.chromadb.resources | nindent 10 }}
+        {{- end }}
         volumeMounts:
         - name: data
           mountPath: /chroma/chroma

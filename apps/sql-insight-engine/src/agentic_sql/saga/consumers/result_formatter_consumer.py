@@ -78,7 +78,7 @@ from core.infra.consumer import BaseConsumer
 
 class ResultFormatterConsumer(BaseConsumer):
     def __init__(self, host: str = None):
-        super().__init__(queue_name=SagaPublisher.QUEUE_FORMAT_RESULT, host=host, prefetch_count=10)
+        super().__init__(queue_name=SagaPublisher.QUEUE_FORMAT_RESULT, host=host, prefetch_count=20)
 
     def process_message(self, ch, method, properties, body):
         process_result_formatting(ch, method, properties, body)
