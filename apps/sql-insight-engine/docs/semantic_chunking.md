@@ -14,25 +14,6 @@ sentences = re.split(r'(?<=[.!?])\s+', text)
 sentences = [s.strip() for s in sentences if s.strip()]
 ```
 
-#### Process Flow
-
-```mermaid
-graph TD
-    A[Input Text] --> B(Split into Sentences)
-    B --> C[Batch Generate Embeddings]
-    C --> D{Iterate Sentences}
-    D --> E{Size + New > Max?}
-    E -- Yes --> F[Finalize Chunk]
-    E -- No --> G{Sim(Centroid, New) < Threshold?}
-    G -- Yes --> F
-    F --> H[Start New Chunk]
-    H --> I[Set Initial Centroid]
-    G -- No --> J[Append to Chunk]
-    J --> K[Update Centroid Average]
-    K --> D
-    I --> D
-    D -- End of Sentences --> L[Return Chunks]
-```
 
 ### 2. Batch Embedding Generation (Optimization)
 
