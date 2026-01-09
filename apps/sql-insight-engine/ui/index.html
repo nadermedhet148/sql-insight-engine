@@ -240,17 +240,23 @@
         </div>
       </div>
 
+      <!-- Global App Navigation (Visible when logged in) -->
+      <nav id="appNav" class="app-nav" style="display: none">
+        <div class="nav-left">
+          <button class="nav-item active" id="navSql" onclick="showQueryInterface()">SQL Chat</button>
+          <button class="nav-item" id="navKb" onclick="showKnowledgeBase()">Knowledge Base</button>
+        </div>
+        <div class="nav-right">
+          <div class="account-badge">
+            <span class="account-icon">👤</span>
+            <span id="navAccountName"></span>
+          </div>
+          <button class="btn-text" onclick="logout()">Switch Account</button>
+        </div>
+      </nav>
+
       <!-- Main Query Interface (Initially Hidden) -->
       <main id="queryInterface" class="main-content" style="display: none">
-        <!-- Account Info Bar -->
-        <div class="account-bar">
-          <div class="account-info">
-            <span class="account-label">Account:</span>
-            <span id="currentAccount" class="account-value"></span>
-          </div>
-          <button class="btn-link" onclick="logout()">Switch Account</button>
-        </div>
-
         <!-- Query Input -->
         <div class="query-section">
           <div class="input-wrapper">
@@ -468,27 +474,12 @@
         </div>
       </main>
 
-      <!-- Knowledge Base Interface (New) -->
+      <!-- Knowledge Base Interface -->
       <main
         id="knowledgeBaseInterface"
         class="main-content"
         style="display: none"
       >
-        <!-- Account Info Bar -->
-        <div class="account-bar">
-          <div class="account-info">
-            <span class="account-label">Account:</span>
-            <span id="kbAccount" class="account-value"></span>
-          </div>
-          <div>
-            <button class="btn-link" onclick="showQueryInterface()">
-              SQL Chat
-            </button>
-            <span style="color: var(--text-muted)">|</span>
-            <button class="btn-link" onclick="logout()">Switch Account</button>
-          </div>
-        </div>
-
         <div class="kb-container">
           <!-- Tabs for Doc Search vs Management -->
           <div class="tabs">

@@ -1,7 +1,7 @@
 fastapi
 uvicorn[standard]
 pydantic
-chromadb>=0.5.0
+chromadb==0.5.23
 numpy<2.0
 minio
 google-genai

@@ -271,9 +271,25 @@ function previousStep() {
 }
 
 function showQueryInterface() {
-    document.getElementById('onboarding').style.display = 'none';
-    document.getElementById('queryInterface').style.display = 'block';
-    document.getElementById('currentAccount').textContent = userData.accountId;
+    const onboarding = document.getElementById('onboarding');
+    const kbInterface = document.getElementById('knowledgeBaseInterface');
+    const queryInterface = document.getElementById('queryInterface');
+    const appNav = document.getElementById('appNav');
+    
+    if (onboarding) onboarding.style.display = 'none';
+    if (kbInterface) kbInterface.style.display = 'none';
+    if (queryInterface) queryInterface.style.display = 'block';
+    
+    // Show Nav and update state
+    if (appNav && userData && userData.accountId) {
+        appNav.style.display = 'flex';
+        document.getElementById('navAccountName').textContent = userData.accountId;
+        
+        const navSql = document.getElementById('navSql');
+        const navKb = document.getElementById('navKb');
+        if (navSql) navSql.classList.add('active');
+        if (navKb) navKb.classList.remove('active');
+    }
 }
 
 // ================== QUERY INTERFACE ==================
@@ -300,12 +316,17 @@ function setupQueryInterface() {
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
             const tabName = tab.getAttribute('data-tab');
-
-            tabs.forEach(t => t.classList.remove('active'));
-            tabPanes.forEach(p => p.classList.remove('active'));
-
-            tab.classList.add('active');
-            document.getElementById(`${tabName}-tab`).classList.add('active');
+            // Only handle non-KB tabs here or check context
+            if (!tab.closest('.kb-container')) {
+                 tabs.forEach(t => {
+                     if (!t.closest('.kb-container')) t.classList.remove('active');
+                 });
+                 tabPanes.forEach(p => p.classList.remove('active'));
+    
+                 tab.classList.add('active');
+                 const targetPane = document.getElementById(`${tabName}-tab`);
+                 if (targetPane) targetPane.classList.add('active');
+            }
         });
     });
 
@@ -796,35 +817,68 @@ let kbSelectedFiles = [];
 // ================== KNOWLEDGE BASE FUNCTIONS ==================
 
 function showKnowledgeBase() {
-    document.getElementById('queryInterface').style.display = 'none';
-    document.getElementById('knowledgeBaseInterface').style.display = 'block';
+    console.log("showKnowledgeBase called");
+    if (!userData || !userData.accountId) {
+        alert("Please log in or create an account first.");
+        return;
+    }
+
+    const queryInterface = document.getElementById('queryInterface');
+    const kbInterface = document.getElementById('knowledgeBaseInterface');
+    const appNav = document.getElementById('appNav');
     
-    // Update account display
-    document.getElementById('kbAccount').textContent = userData.accountId;
+    if (queryInterface) queryInterface.style.display = 'none';
+    if (kbInterface) kbInterface.style.display = 'block';
     
-    // Default to chat tab
+    // Show Nav and update state
+    if (appNav) {
+        appNav.style.display = 'flex';
+         document.getElementById('navAccountName').textContent = userData.accountId;
+         
+         const navSql = document.getElementById('navSql');
+         const navKb = document.getElementById('navKb');
+         if (navSql) navSql.classList.remove('active');
+         if (navKb) navKb.classList.add('active');
+    }
+    
+    // Default to chat tab using robust call
     switchKbTab('chat');
 }
 
 function switchKbTab(tabName) {
+    console.log(`switchKbTab called with ${tabName}`);
     const chatView = document.getElementById('kbChatView');
     const manageView = document.getElementById('kbManageView');
-    const tabs = document.querySelectorAll('.kb-container .tab');
+    
+    // Use more specific selector to avoid conflict with other tabs
+    const tabs = document.querySelectorAll('.kb-container .tabs .tab');
+    
+    if (!chatView || !manageView) {
+        console.error("KB Views not found");
+        return;
+    }
     
     if (tabName === 'chat') {
         chatView.style.display = 'block';
         manageView.style.display = 'none';
-        tabs[0].classList.add('active');
-        tabs[1].classList.remove('active');
+        
+        if (tabs.length >= 2) {
+            tabs[0].classList.add('active');
+            tabs[1].classList.remove('active');
+        }
     } else {
         chatView.style.display = 'none';
         manageView.style.display = 'block';
-        tabs[0].classList.remove('active');
-        tabs[1].classList.add('active');
+        
+        if (tabs.length >= 2) {
+            tabs[0].classList.remove('active');
+            tabs[1].classList.add('active');
+        }
         
         // Load documents when switching to manage tab
         loadDocuments();
-        setupKbFileUpload();
+        // Setup file upload only if element exists and hasn't been blocked
+        setTimeout(setupKbFileUpload, 100); 
     }
 }
 
@@ -1024,9 +1078,9 @@ async function submitRagQuery() {
         // Render sources
         if (data.context && data.context.length > 0) {
             sourcesDiv.innerHTML = data.context.map((ctx, i) => `
-                <div class="source-item" style="margin-bottom: 0.5rem; padding: 0.5rem; background: rgba(0,0,0,0.03); border-radius: 4px;">
-                    <div style="font-weight: 600; margin-bottom: 0.25rem;">Source Chunk ${i+1}</div>
-                    <div style="font-family: monospace; font-size: 0.8em; white-space: pre-wrap;">${ctx.substring(0, 300)}...</div>
+                <div class="source-item">
+                    <div style="font-weight: 600; margin-bottom: 0.25rem; color: var(--primary-light);">Source Chunk ${i+1}</div>
+                    <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; line-height: 1.5; color: var(--text-secondary);">${ctx.substring(0, 300)}...</div>
                 </div>
             `).join('');
             document.querySelector('.sources-section').style.display = 'block';

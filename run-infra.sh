@@ -8,7 +8,7 @@ NAMESPACE="sql-insight-engine"
 
 # 1. Pull and Import Infrastructure Images
 echo "Processing infrastructure images..."
-INFRA_IMAGES="postgres:15 redis:7-alpine chromadb/chroma:latest rabbitmq:3-management minio/minio:latest"
+INFRA_IMAGES="postgres:15 redis:7-alpine chromadb/chroma:0.5.23 rabbitmq:3-management minio/minio:latest"
 for img in $INFRA_IMAGES; do
     echo "Processing $img..."
     if ! docker image inspect $img > /dev/null 2>&1; then

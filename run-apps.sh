@@ -64,7 +64,7 @@ helm upgrade --install sql-insight-engine ./helm/sql-insight-engine \
     --set mcpRegistry.enabled=true \
     --set mcpRegistry.image.tag=$TAG \
     --set secrets.geminiApiKey="${GEMINI_API_KEY}" \
-    --set api.env.MOCK_GEMINI="true" \
+    --set api.env.MOCK_GEMINI="fasle" \
     --create-namespace \
     --namespace $NAMESPACE
 
