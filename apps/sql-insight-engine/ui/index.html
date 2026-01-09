@@ -1,343 +1,637 @@
 <!DOCTYPE html>
 <html lang="en">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SQL Insight Engine - Natural Language Query Interface</title>
-    <link rel="stylesheet" href="styles.css">
-</head>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
 
-<body>
+  <body>
     <div class="container">
-        <!-- Header -->
-        <header class="header">
-            <div class="logo">
-                <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path
-                        d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z">
-                    </path>
-                    <polyline points="7.5 4.21 12 6.81 16.5 4.21"></polyline>
-                    <polyline points="7.5 19.79 7.5 14.6 3 12"></polyline>
-                    <polyline points="21 12 16.5 14.6 16.5 19.79"></polyline>
-                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
-                </svg>
-                <h1>SQL Insight Engine</h1>
-            </div>
-            <div class="subtitle">Ask questions about your data in plain English</div>
-        </header>
+      <!-- Header -->
+      <header class="header">
+        <div class="logo">
+          <svg
+            class="logo-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"
+            ></path>
+            <polyline points="7.5 4.21 12 6.81 16.5 4.21"></polyline>
+            <polyline points="7.5 19.79 7.5 14.6 3 12"></polyline>
+            <polyline points="21 12 16.5 14.6 16.5 19.79"></polyline>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+          </svg>
+          <h1>SQL Insight Engine</h1>
+        </div>
+        <div class="subtitle">
+          Ask questions about your data in plain English
+        </div>
+      </header>
 
-        <!-- Onboarding Wizard -->
-        <div id="onboarding" class="onboarding">
-            <!-- Progress Steps -->
-            <div class="wizard-progress">
-                <div class="wizard-step active" data-step="1">
-                    <div class="step-number">1</div>
-                    <div class="step-label">Create Account</div>
-                </div>
-                <div class="wizard-step" data-step="2">
-                    <div class="step-number">2</div>
-                    <div class="step-label">Database Setup</div>
-                </div>
-                <div class="wizard-step" data-step="3">
-                    <div class="step-number">3</div>
-                    <div class="step-label">Add Documents</div>
-                </div>
-                <div class="wizard-step" data-step="4">
-                    <div class="step-number">4</div>
-                    <div class="step-label">Start Querying</div>
-                </div>
-            </div>
-
-            <!-- Step 1: Create Account -->
-            <div id="step1" class="wizard-content active">
-                <div class="wizard-card">
-                    <h2>Create Your Account</h2>
-                    <p>Let's start by creating your account. This will help us track your queries and manage your quota.
-                    </p>
-
-                    <div class="form-group">
-                        <label for="accountId">Account ID</label>
-                        <input type="text" id="accountId" placeholder="e.g., my_company_001" />
-                        <small>Choose a unique identifier for your account</small>
-                    </div>
-
-                    <div class="wizard-actions">
-                        <button class="btn-primary" onclick="createAccount()">Create Account & Continue</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Step 2: Database Configuration -->
-            <div id="step2" class="wizard-content">
-                <div class="wizard-card">
-                    <h2>Configure Your Database</h2>
-                    <p>Connect to your PostgreSQL database so we can query your data.</p>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="dbHost">Host</label>
-                            <input type="text" id="dbHost" placeholder="localhost" value="localhost" />
-                        </div>
-
-                        <div class="form-group">
-                            <label for="dbPort">Port</label>
-                            <input type="number" id="dbPort" placeholder="5432" value="5433" />
-                        </div>
-                    </div>
-
-                    <div class="form-group">
-                        <label for="dbName">Database Name</label>
-                        <input type="text" id="dbName" placeholder="external_db" value="external_db" />
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="dbUsername">Username</label>
-                            <input type="text" id="dbUsername" placeholder="admin" value="admin" />
-                        </div>
-
-                        <div class="form-group">
-                            <label for="dbPassword">Password</label>
-                            <input type="password" id="dbPassword" placeholder="password" value="password" />
-                        </div>
-                    </div>
-
-                    <div class="wizard-actions">
-                        <button class="btn-secondary" onclick="previousStep()">Back</button>
-                        <button class="btn-primary" onclick="configureDatabase()">Configure Database & Continue</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Step 3: Add Documents (Optional) -->
-            <div id="step3" class="wizard-content">
-                <div class="wizard-card">
-                    <h2>Add Documents to Knowledge Base</h2>
-                    <p>Upload documents to enhance the AI's understanding of your database schema and business logic.
-                        This step is optional.</p>
-
-                    <div class="upload-area" id="uploadArea">
-                        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                            <polyline points="17 8 12 3 7 8"></polyline>
-                            <line x1="12" y1="3" x2="12" y2="15"></line>
-                        </svg>
-                        <h3>Drag & drop files here</h3>
-                        <p>or click to browse</p>
-                        <small>Supported formats: .txt, .md, .pdf</small>
-                        <input type="file" id="fileInput" accept=".txt,.md,.pdf" multiple style="display: none;" />
-                    </div>
-
-                    <div id="uploadedFiles" class="uploaded-files"></div>
-
-                    <div class="wizard-actions">
-                        <button class="btn-secondary" onclick="previousStep()">Back</button>
-                        <button class="btn-tertiary" onclick="skipDocuments()">Skip This Step</button>
-                        <button class="btn-primary" onclick="uploadDocuments()">Upload & Continue</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Step 4: Ready to Query -->
-            <div id="step4" class="wizard-content">
-                <div class="wizard-card success-card">
-                    <div class="success-icon">✓</div>
-                    <h2>All Set!</h2>
-                    <p>Your account is configured and ready to use. You can now start asking questions about your data.
-                    </p>
-
-                    <div class="setup-summary">
-                        <div class="summary-item">
-                            <span class="summary-label">Account ID:</span>
-                            <span id="summaryAccountId" class="summary-value"></span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">Database:</span>
-                            <span id="summaryDatabase" class="summary-value"></span>
-                        </div>
-                        <div class="summary-item">
-                            <span class="summary-label">Documents:</span>
-                            <span id="summaryDocs" class="summary-value">0 uploaded</span>
-                        </div>
-                    </div>
-
-                    <div class="wizard-actions">
-                        <button class="btn-primary btn-large" onclick="startQuerying()">Start Asking Questions</button>
-                    </div>
-                </div>
-            </div>
+      <!-- Onboarding Wizard -->
+      <div id="onboarding" class="onboarding">
+        <!-- Progress Steps -->
+        <div class="wizard-progress">
+          <div class="wizard-step active" data-step="1">
+            <div class="step-number">1</div>
+            <div class="step-label">Create Account</div>
+          </div>
+          <div class="wizard-step" data-step="2">
+            <div class="step-number">2</div>
+            <div class="step-label">Database Setup</div>
+          </div>
+          <div class="wizard-step" data-step="3">
+            <div class="step-number">3</div>
+            <div class="step-label">Add Documents</div>
+          </div>
+          <div class="wizard-step" data-step="4">
+            <div class="step-number">4</div>
+            <div class="step-label">Start Querying</div>
+          </div>
         </div>
 
-        <!-- Main Query Interface (Initially Hidden) -->
-        <main id="queryInterface" class="main-content" style="display: none;">
-            <!-- Account Info Bar -->
-            <div class="account-bar">
-                <div class="account-info">
-                    <span class="account-label">Account:</span>
-                    <span id="currentAccount" class="account-value"></span>
-                </div>
-                <button class="btn-link" onclick="logout()">Switch Account</button>
+        <!-- Step 1: Create Account -->
+        <div id="step1" class="wizard-content active">
+          <div class="wizard-card">
+            <h2>Create Your Account</h2>
+            <p>
+              Let's start by creating your account. This will help us track your
+              queries and manage your quota.
+            </p>
+
+            <div class="form-group">
+              <label for="accountId">Account ID</label>
+              <input
+                type="text"
+                id="accountId"
+                placeholder="e.g., my_company_001"
+              />
+              <small>Choose a unique identifier for your account</small>
             </div>
 
-            <!-- Query Input -->
+            <div class="wizard-actions">
+              <button class="btn-primary" onclick="createAccount()">
+                Create Account & Continue
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Database Configuration -->
+        <div id="step2" class="wizard-content">
+          <div class="wizard-card">
+            <h2>Configure Your Database</h2>
+            <p>
+              Connect to your PostgreSQL database so we can query your data.
+            </p>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="dbHost">Host</label>
+                <input
+                  type="text"
+                  id="dbHost"
+                  placeholder="localhost"
+                  value="localhost"
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="dbPort">Port</label>
+                <input
+                  type="number"
+                  id="dbPort"
+                  placeholder="5432"
+                  value="5433"
+                />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="dbName">Database Name</label>
+              <input
+                type="text"
+                id="dbName"
+                placeholder="external_db"
+                value="external_db"
+              />
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="dbUsername">Username</label>
+                <input
+                  type="text"
+                  id="dbUsername"
+                  placeholder="admin"
+                  value="admin"
+                />
+              </div>
+
+              <div class="form-group">
+                <label for="dbPassword">Password</label>
+                <input
+                  type="password"
+                  id="dbPassword"
+                  placeholder="password"
+                  value="password"
+                />
+              </div>
+            </div>
+
+            <div class="wizard-actions">
+              <button class="btn-secondary" onclick="previousStep()">
+                Back
+              </button>
+              <button class="btn-primary" onclick="configureDatabase()">
+                Configure Database & Continue
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Add Documents (Optional) -->
+        <div id="step3" class="wizard-content">
+          <div class="wizard-card">
+            <h2>Add Documents to Knowledge Base</h2>
+            <p>
+              Upload documents to enhance the AI's understanding of your
+              database schema and business logic. This step is optional.
+            </p>
+
+            <div class="upload-area" id="uploadArea">
+              <svg
+                class="upload-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <h3>Drag & drop files here</h3>
+              <p>or click to browse</p>
+              <small>Supported formats: .txt, .md, .pdf</small>
+              <input
+                type="file"
+                id="fileInput"
+                accept=".txt,.md,.pdf"
+                multiple
+                style="display: none"
+              />
+            </div>
+
+            <div id="uploadedFiles" class="uploaded-files"></div>
+
+            <div class="wizard-actions">
+              <button class="btn-secondary" onclick="previousStep()">
+                Back
+              </button>
+              <button class="btn-tertiary" onclick="skipDocuments()">
+                Skip This Step
+              </button>
+              <button class="btn-primary" onclick="uploadDocuments()">
+                Upload & Continue
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 4: Ready to Query -->
+        <div id="step4" class="wizard-content">
+          <div class="wizard-card success-card">
+            <div class="success-icon">✓</div>
+            <h2>All Set!</h2>
+            <p>
+              Your account is configured and ready to use. You can now start
+              asking questions about your data.
+            </p>
+
+            <div class="setup-summary">
+              <div class="summary-item">
+                <span class="summary-label">Account ID:</span>
+                <span id="summaryAccountId" class="summary-value"></span>
+              </div>
+              <div class="summary-item">
+                <span class="summary-label">Database:</span>
+                <span id="summaryDatabase" class="summary-value"></span>
+              </div>
+              <div class="summary-item">
+                <span class="summary-label">Documents:</span>
+                <span id="summaryDocs" class="summary-value">0 uploaded</span>
+              </div>
+            </div>
+
+            <div class="wizard-actions">
+              <button class="btn-primary btn-large" onclick="startQuerying()">
+                Start Asking Questions
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Query Interface (Initially Hidden) -->
+      <main id="queryInterface" class="main-content" style="display: none">
+        <!-- Account Info Bar -->
+        <div class="account-bar">
+          <div class="account-info">
+            <span class="account-label">Account:</span>
+            <span id="currentAccount" class="account-value"></span>
+          </div>
+          <button class="btn-link" onclick="logout()">Switch Account</button>
+        </div>
+
+        <!-- Query Input -->
+        <div class="query-section">
+          <div class="input-wrapper">
+            <textarea
+              id="queryInput"
+              placeholder="Ask a question about your data... e.g., 'What are my top 5 customers by revenue?'"
+              rows="3"
+            ></textarea>
+            <button id="submitBtn" class="submit-btn">
+              <svg
+                class="btn-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+              <span>Ask Question</span>
+            </button>
+          </div>
+
+          <!-- Quick Examples -->
+          <div class="examples">
+            <div class="examples-title">Try these examples:</div>
+            <div class="example-chips">
+              <button
+                class="chip"
+                data-query="What are my top 5 customers by total order amount?"
+              >
+                Top customers by revenue
+              </button>
+              <button
+                class="chip"
+                data-query="How many orders do I have in total?"
+              >
+                Total orders count
+              </button>
+              <button
+                class="chip"
+                data-query="What are the most popular products by quantity sold?"
+              >
+                Popular products
+              </button>
+              <button class="chip" data-query="What is my total revenue?">
+                Total revenue
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="loading-state" style="display: none">
+          <div class="spinner"></div>
+          <div class="loading-text">Processing your question...</div>
+          <div class="loading-steps">
+            <div class="step" id="step1Load">
+              <div class="step-icon">1</div>
+              <div class="step-text">Retrieving schema context</div>
+            </div>
+            <div class="step" id="step2Load">
+              <div class="step-icon">2</div>
+              <div class="step-text">Generating SQL query</div>
+            </div>
+            <div class="step" id="step3Load">
+              <div class="step-icon">3</div>
+              <div class="step-text">Executing query</div>
+            </div>
+            <div class="step" id="step4Load">
+              <div class="step-icon">4</div>
+              <div class="step-text">Formatting results</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Results -->
+        <div id="results" class="results" style="display: none">
+          <!-- Formatted Response -->
+          <div class="result-card response-card">
+            <div class="card-header">
+              <svg
+                class="card-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                ></path>
+              </svg>
+              <h3>Answer</h3>
+            </div>
+            <div
+              id="sagaReasoning"
+              class="reasoning-summary-container"
+              style="display: none"
+            >
+              <div class="metrics-bar">
+                <div class="metric">
+                  <span class="metric-label">Total Time:</span>
+                  <span id="totalTime" class="metric-value">0ms</span>
+                </div>
+                <div class="metric">
+                  <span class="metric-label">Tokens Used:</span>
+                  <span id="totalTokens" class="metric-value">0</span>
+                </div>
+              </div>
+              <div id="sagaReasoningContent"></div>
+            </div>
+            <div id="formattedResponse" class="response-content"></div>
+          </div>
+
+          <!-- Tabs for Additional Info -->
+          <div class="tabs">
+            <button class="tab active" data-tab="reasoning">Reasoning</button>
+            <button class="tab" data-tab="sql">SQL Query</button>
+            <button class="tab" data-tab="raw">Raw Results</button>
+          </div>
+
+          <!-- Tab Contents -->
+          <div class="tab-content">
+            <div id="reasoning-tab" class="tab-pane active">
+              <div class="result-card">
+                <div class="card-header">
+                  <svg
+                    class="card-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <polyline
+                      points="22 12 18 12 15 21 9 3 6 12 2 12"
+                    ></polyline>
+                  </svg>
+                  <h3>Processing Steps</h3>
+                </div>
+                <div id="reasoningContent" class="reasoning-content"></div>
+              </div>
+            </div>
+
+            <div id="sql-tab" class="tab-pane">
+              <div class="result-card">
+                <div class="card-header">
+                  <svg
+                    class="card-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <polyline points="16 18 22 12 16 6"></polyline>
+                    <polyline points="8 6 2 12 8 18"></polyline>
+                  </svg>
+                  <h3>Generated SQL Query</h3>
+                  <button id="copySqlBtn" class="copy-btn">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                    >
+                      <rect
+                        x="9"
+                        y="9"
+                        width="13"
+                        height="13"
+                        rx="2"
+                        ry="2"
+                      ></rect>
+                      <path
+                        d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"
+                      ></path>
+                    </svg>
+                    Copy
+                  </button>
+                </div>
+                <pre id="sqlQuery" class="code-block"></pre>
+              </div>
+            </div>
+
+            <div id="raw-tab" class="tab-pane">
+              <div class="result-card">
+                <div class="card-header">
+                  <svg
+                    class="card-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                    ></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <polyline points="10 9 9 9 8 9"></polyline>
+                  </svg>
+                  <h3>Raw Query Results</h3>
+                </div>
+                <div id="rawResults" class="raw-results"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorState" class="error-state" style="display: none">
+          <div class="error-icon">⚠️</div>
+          <div class="error-title">Something went wrong</div>
+          <div id="errorMessage" class="error-message"></div>
+        </div>
+      </main>
+
+      <!-- Knowledge Base Interface (New) -->
+      <main
+        id="knowledgeBaseInterface"
+        class="main-content"
+        style="display: none"
+      >
+        <!-- Account Info Bar -->
+        <div class="account-bar">
+          <div class="account-info">
+            <span class="account-label">Account:</span>
+            <span id="kbAccount" class="account-value"></span>
+          </div>
+          <div>
+            <button class="btn-link" onclick="showQueryInterface()">
+              SQL Chat
+            </button>
+            <span style="color: var(--text-muted)">|</span>
+            <button class="btn-link" onclick="logout()">Switch Account</button>
+          </div>
+        </div>
+
+        <div class="kb-container">
+          <!-- Tabs for Doc Search vs Management -->
+          <div class="tabs">
+            <button class="tab active" onclick="switchKbTab('chat')">
+              Ask Documents
+            </button>
+            <button class="tab" onclick="switchKbTab('manage')">
+              Manage Documents
+            </button>
+          </div>
+
+          <!-- Chat View -->
+          <div id="kbChatView" class="kb-view" style="display: block">
             <div class="query-section">
-                <div class="input-wrapper">
-                    <textarea id="queryInput"
-                        placeholder="Ask a question about your data... e.g., 'What are my top 5 customers by revenue?'"
-                        rows="3"></textarea>
-                    <button id="submitBtn" class="submit-btn">
-                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="22" y1="2" x2="11" y2="13"></line>
-                            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                        </svg>
-                        <span>Ask Question</span>
-                    </button>
-                </div>
-
-                <!-- Quick Examples -->
-                <div class="examples">
-                    <div class="examples-title">Try these examples:</div>
-                    <div class="example-chips">
-                        <button class="chip" data-query="What are my top 5 customers by total order amount?">Top
-                            customers by revenue</button>
-                        <button class="chip" data-query="How many orders do I have in total?">Total orders
-                            count</button>
-                        <button class="chip" data-query="What are the most popular products by quantity sold?">Popular
-                            products</button>
-                        <button class="chip" data-query="What is my total revenue?">Total revenue</button>
-                    </div>
-                </div>
+              <div class="input-wrapper">
+                <textarea
+                  id="kbQueryInput"
+                  placeholder="Ask a question about your documents..."
+                  rows="3"
+                ></textarea>
+                <button
+                  id="kbSubmitBtn"
+                  class="submit-btn"
+                  onclick="submitRagQuery()"
+                >
+                  <svg
+                    class="btn-icon"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                  <span>Ask</span>
+                </button>
+              </div>
             </div>
 
-            <!-- Loading State -->
-            <div id="loadingState" class="loading-state" style="display: none;">
-                <div class="spinner"></div>
-                <div class="loading-text">Processing your question...</div>
-                <div class="loading-steps">
-                    <div class="step" id="step1Load">
-                        <div class="step-icon">1</div>
-                        <div class="step-text">Retrieving schema context</div>
-                    </div>
-                    <div class="step" id="step2Load">
-                        <div class="step-icon">2</div>
-                        <div class="step-text">Generating SQL query</div>
-                    </div>
-                    <div class="step" id="step3Load">
-                        <div class="step-icon">3</div>
-                        <div class="step-text">Executing query</div>
-                    </div>
-                    <div class="step" id="step4Load">
-                        <div class="step-icon">4</div>
-                        <div class="step-text">Formatting results</div>
-                    </div>
-                </div>
+            <div id="kbLoading" class="loading-state" style="display: none">
+              <div class="spinner"></div>
+              <div class="loading-text">Analyzing documents...</div>
             </div>
 
-            <!-- Results -->
-            <div id="results" class="results" style="display: none;">
-                <!-- Formatted Response -->
-                <div class="result-card response-card">
-                    <div class="card-header">
-                        <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                        </svg>
-                        <h3>Answer</h3>
-                    </div>
-                    <div id="sagaReasoning" class="reasoning-summary-container" style="display: none;">
-                        <div class="metrics-bar">
-                            <div class="metric">
-                                <span class="metric-label">Total Time:</span>
-                                <span id="totalTime" class="metric-value">0ms</span>
-                            </div>
-                            <div class="metric">
-                                <span class="metric-label">Tokens Used:</span>
-                                <span id="totalTokens" class="metric-value">0</span>
-                            </div>
-                        </div>
-                        <div id="sagaReasoningContent"></div>
-                    </div>
-                    <div id="formattedResponse" class="response-content"></div>
-                </div>
+            <div
+              id="kbResult"
+              class="result-card response-card"
+              style="display: none; margin-top: 2rem"
+            >
+              <div class="card-header">
+                <svg
+                  class="card-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+                  ></path>
+                </svg>
+                <h3>Answer</h3>
+              </div>
+              <div id="kbAnswerContent" class="response-content"></div>
 
-                <!-- Tabs for Additional Info -->
-                <div class="tabs">
-                    <button class="tab active" data-tab="reasoning">Reasoning</button>
-                    <button class="tab" data-tab="sql">SQL Query</button>
-                    <button class="tab" data-tab="raw">Raw Results</button>
-                </div>
+              <!-- Sources Section -->
+              <div
+                class="sources-section"
+                style="
+                  margin-top: 1rem;
+                  padding-top: 1rem;
+                  border-top: 1px solid var(--border-color);
+                "
+              >
+                <h4
+                  style="
+                    font-size: 0.9rem;
+                    color: var(--text-muted);
+                    margin-bottom: 0.5rem;
+                  "
+                >
+                  Sources
+                </h4>
+                <div
+                  id="kbSources"
+                  class="source-list"
+                  style="font-size: 0.85rem; color: var(--text-secondary)"
+                ></div>
+              </div>
+            </div>
+          </div>
 
-                <!-- Tab Contents -->
-                <div class="tab-content">
-                    <div id="reasoning-tab" class="tab-pane active">
-                        <div class="result-card">
-                            <div class="card-header">
-                                <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2">
-                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-                                </svg>
-                                <h3>Processing Steps</h3>
-                            </div>
-                            <div id="reasoningContent" class="reasoning-content"></div>
-                        </div>
-                    </div>
-
-                    <div id="sql-tab" class="tab-pane">
-                        <div class="result-card">
-                            <div class="card-header">
-                                <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2">
-                                    <polyline points="16 18 22 12 16 6"></polyline>
-                                    <polyline points="8 6 2 12 8 18"></polyline>
-                                </svg>
-                                <h3>Generated SQL Query</h3>
-                                <button id="copySqlBtn" class="copy-btn">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                                    </svg>
-                                    Copy
-                                </button>
-                            </div>
-                            <pre id="sqlQuery" class="code-block"></pre>
-                        </div>
-                    </div>
-
-                    <div id="raw-tab" class="tab-pane">
-                        <div class="result-card">
-                            <div class="card-header">
-                                <svg class="card-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                    <polyline points="14 2 14 8 20 8"></polyline>
-                                    <line x1="16" y1="13" x2="8" y2="13"></line>
-                                    <line x1="16" y1="17" x2="8" y2="17"></line>
-                                    <polyline points="10 9 9 9 8 9"></polyline>
-                                </svg>
-                                <h3>Raw Query Results</h3>
-                            </div>
-                            <div id="rawResults" class="raw-results"></div>
-                        </div>
-                    </div>
-                </div>
+          <!-- Management View -->
+          <div id="kbManageView" class="kb-view" style="display: none">
+            <div class="wizard-card">
+              <h3>Upload New Document</h3>
+              <div class="upload-area" id="kbUploadArea">
+                <svg
+                  class="upload-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <p>Drag & drop .txt, .md, .pdf files here</p>
+                <input
+                  type="file"
+                  id="kbFileInput"
+                  accept=".txt,.md,.pdf"
+                  multiple
+                  style="display: none"
+                />
+              </div>
+              <div id="kbUploadedFiles" class="uploaded-files"></div>
+              <div style="margin-top: 1rem; text-align: right">
+                <button class="btn-primary" onclick="uploadKbDocuments()">
+                  Upload
+                </button>
+              </div>
             </div>
 
-            <!-- Error State -->
-            <div id="errorState" class="error-state" style="display: none;">
-                <div class="error-icon">⚠️</div>
-                <div class="error-title">Something went wrong</div>
-                <div id="errorMessage" class="error-message"></div>
+            <div class="wizard-card" style="margin-top: 2rem">
+              <h3>Your Documents</h3>
+              <div id="docList" class="doc-list">
+                <!-- Populated by JS -->
+                <div class="text-muted">Loading documents...</div>
+              </div>
             </div>
-        </main>
+          </div>
+        </div>
+      </main>
 
-        <!-- Footer -->
-        <footer class="footer">
-            <p>Powered by Gemini AI • ChromaDB • PostgreSQL</p>
-        </footer>
+      <!-- Footer -->
+      <footer class="footer">
+        <p>Powered by Gemini AI • ChromaDB • PostgreSQL</p>
+      </footer>
     </div>
 
     <script src="script.js"></script>
-</body>
-
+  </body>
 </html>

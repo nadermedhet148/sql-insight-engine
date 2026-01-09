@@ -62,34 +62,39 @@ class KnowledgeBaseActionConsumer(BaseConsumer):
             print(f"Failed to download from Minio: {e}")
             return
 
-        chunks = self.chunk_text(content)
-        print(f"Split into {len(chunks)} chunks")
+        # Use semantic chunking
+        # Returns list of (chunk_text, chunk_embedding)
+        chunks_data = self.semantic_chunk_text(content)
+        print(f"Split into {len(chunks_data)} semantic chunks")
         
         ids = []
         documents = []
         metadatas = []
         embeddings = []
         
-        for i, chunk in enumerate(chunks):
+        for i, (chunk_text, chunk_emb) in enumerate(chunks_data):
             chunk_id = f"{object_name}_{i}"
             
-            try:
-                emb = self.gemini_client.get_embedding(chunk, task_type="retrieval_document")
-                if not emb:
-                    print(f"Skipping chunk {i} due to empty embedding")
-                    continue
-                
-                ids.append(chunk_id)
-                documents.append(chunk)
-                embeddings.append(emb)
-                metadatas.append({
-                    "account_id": account_id,
-                    "object_name": object_name,
-                    "filename": filename,
-                    "chunk_index": i
-                })
-            except Exception as e:
-                print(f"Error generating embedding for chunk {i}: {e}")
+            # If embedding is missing (fallback case), try to generate one last time or skip
+            # The semantic chunker tries hard to return valid embeddings calculate from the centroid or similar.
+            # But let's check.
+            if chunk_emb is None or len(chunk_emb) == 0:
+                 print(f"Warning: Empty embedding for chunk {i}, retrying generation.")
+                 chunk_emb = self.gemini_client.get_embedding(chunk_text, task_type="retrieval_document")
+            
+            if not chunk_emb:
+                 print(f"Skipping chunk {i} due to empty embedding")
+                 continue
+
+            ids.append(chunk_id)
+            documents.append(chunk_text)
+            embeddings.append(chunk_emb)
+            metadatas.append({
+                "account_id": account_id,
+                "object_name": object_name,
+                "filename": filename,
+                "chunk_index": i
+            })
                 
         if ids:
             try:
@@ -120,15 +125,101 @@ class KnowledgeBaseActionConsumer(BaseConsumer):
         except Exception as e:
             print(f"Error deleting from ChromaDB: {e}")
 
-    # [todo] use better parser later 
-    def chunk_text(self, text, chunk_size=1000, overlap=100):
+    def semantic_chunk_text(self, text, max_chunk_size=1000, similarity_threshold=0.5):
+        """
+        Splits text into chunks based on semantic similarity of sentences.
+        Returns a list of tuples: (chunk_text, chunk_embedding_vector).
+        The chunk_embedding_vector is the centroid of the sentences in that chunk.
+        """
+        import re
+        import numpy as np
+        
         if not text:
             return []
-        chunks = []
-        start = 0
-        while start < len(text):
-            end = start + chunk_size
-            chunks.append(text[start:end])
-            start += (chunk_size - overlap)
-        return chunks
+            
+        # 1. Split into sentences
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        if not sentences:
+            return []
+            
+        if len(sentences) == 1:
+            # Generate single embedding
+            emb = self.gemini_client.get_embedding(sentences[0], task_type="retrieval_document")
+            return [(sentences[0], emb)]
 
+        # 2. Get embeddings for ALL sentences in a batch
+        try:
+            embeddings_list = self.gemini_client.get_batch_embeddings(sentences, task_type="retrieval_document")
+        except Exception as e:
+            print(f"Batch embedding failed: {e}. Falling back to single chunk.")
+            # Fallback: return single chunk with no embedding (caller handles regeneration)
+            return [(" ".join(sentences), [])]
+            
+        if not embeddings_list or len(embeddings_list) != len(sentences):
+            print("Mismatch or empty embeddings. Falling back to simple size splitting.")
+            return [(" ".join(sentences), [])]
+
+        # Convert to numpy for efficiency
+        embeddings = [np.array(e) for e in embeddings_list]
+
+        chunks = []
+        current_chunk_sentences = [sentences[0]]
+        current_chunk_size = len(sentences[0])
+        
+        # Track the "Topic" (Centroid)
+        current_chunk_embedding = embeddings[0]
+        current_chunk_count = 1
+
+        for i in range(1, len(sentences)):
+            sentence = sentences[i]
+            emb = embeddings[i]
+            
+            # 1. Coarse size check
+            if current_chunk_size + len(sentence) > max_chunk_size:
+                # Finalize chunk
+                chunk_text = " ".join(current_chunk_sentences)
+                # Store the centroid as the chunk's representative embedding
+                chunks.append((chunk_text, current_chunk_embedding.tolist()))
+                
+                # Start new
+                current_chunk_sentences = [sentence]
+                current_chunk_size = len(sentence)
+                current_chunk_embedding = emb
+                current_chunk_count = 1
+                continue
+            
+            # 2. Semantic check against Centroid
+            norm_a = np.linalg.norm(current_chunk_embedding)
+            norm_b = np.linalg.norm(emb)
+            
+            sim = 0
+            if norm_a > 0 and norm_b > 0:
+                sim = np.dot(current_chunk_embedding, emb) / (norm_a * norm_b)
+            
+            if sim < similarity_threshold:
+                # Topic Shift
+                chunk_text = " ".join(current_chunk_sentences)
+                chunks.append((chunk_text, current_chunk_embedding.tolist()))
+                
+                # Start new
+                current_chunk_sentences = [sentence]
+                current_chunk_size = len(sentence)
+                current_chunk_embedding = emb
+                current_chunk_count = 1
+            else:
+                # Continuation
+                current_chunk_sentences.append(sentence)
+                current_chunk_size += len(sentence)
+                
+                # Update Centroid
+                prev_sum = current_chunk_embedding * current_chunk_count
+                current_chunk_count += 1
+                current_chunk_embedding = (prev_sum + emb) / current_chunk_count
+
+        if current_chunk_sentences:
+            chunk_text = " ".join(current_chunk_sentences)
+            chunks.append((chunk_text, current_chunk_embedding.tolist()))
+            
+        return chunks

@@ -37,6 +37,7 @@ except Exception as e:
 async def query_knowledgebase(request: QueryRequest):
     """
     Simple endpoint to query Chroma DB with account_id and query.
+    Returns raw chunks.
     """
     try:
         gemini_client = GeminiClient()
@@ -56,6 +57,89 @@ async def query_knowledgebase(request: QueryRequest):
         return results
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+@router.post("/ask", response_model=Any)
+async def ask_knowledgebase(request: QueryRequest):
+    """
+    Synchronous RAG endpoint.
+    Retrieves context and generates an answer using Gemini.
+    """
+    try:
+        gemini_client = GeminiClient()
+        chroma_client = ChromaClientFactory.get_client()
+        collection = chroma_client.get_or_create_collection(name=request.collection_name)
+        
+        # 1. Retrieve Context
+        query_embedding = gemini_client.get_embedding(request.query, task_type="retrieval_query")
+        
+        results = collection.query(
+            query_embeddings=[query_embedding],
+            n_results=request.n_results,
+            where={"account_id": request.account_id}
+        )
+        
+        documents = results['documents'][0] if results['documents'] else []
+        
+        if not documents:
+            return {
+                "answer": "I couldn't find any relevant information in your uploaded documents to answer that question.",
+                "context": []
+            }
+            
+        # 2. Construct Prompt
+        context_text = "\n\n".join(documents)
+        prompt = f"""You are a helpful assistant. Use the following context to answer the user's question.
+If the answer is not in the context, say you don't know.
+
+Context:
+{context_text}
+
+Question: {request.query}
+
+Answer:"""
+
+        # 3. Generate Answer
+        response = gemini_client.generate_content(prompt)
+        answer = response.text if response else "Failed to generate answer."
+        
+        return {
+            "answer": answer,
+            "context": documents
+        }
+        
+    except Exception as e:
+        logger.exception(f"Error in ask_knowledgebase: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing RAG request: {str(e)}")
+
+
+@router.get("/files", response_model=Any)
+async def list_files(account_id: str):
+    """
+    List uploaded files for an account from MinIO.
+    """
+    try:
+        client = get_minio_client()
+        # List objects with prefix account_id/
+        objects = client.list_objects(BUCKET_NAME, prefix=f"{account_id}/", recursive=True)
+        
+        files = []
+        for obj in objects:
+            # obj.object_name is like account_id/filename
+            filename = obj.object_name.split('/', 1)[1] if '/' in obj.object_name else obj.object_name
+            files.append({
+                "filename": filename,
+                "size": obj.size,
+                "last_modified": obj.last_modified,
+                "object_name": obj.object_name
+            })
+            
+        return files
+    except Exception as e:
+        logger.exception(f"Error listing files: {e}")
+        # If bucket doesn't exist, return empty list
+        if "NoSuchBucket" in str(e):
+            return []
+        raise HTTPException(status_code=500, detail=f"Error listing files: {str(e)}")
 
 @router.post("/", response_model=Any)
 async def add_document(

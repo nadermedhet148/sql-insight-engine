@@ -789,3 +789,265 @@ function formatMarkdownTable(markdown) {
 
 console.log('SQL Insight Engine UI loaded successfully!');
 console.log(`API URL: ${API_BASE_URL}`);
+
+// KB State
+let kbSelectedFiles = [];
+
+// ================== KNOWLEDGE BASE FUNCTIONS ==================
+
+function showKnowledgeBase() {
+    document.getElementById('queryInterface').style.display = 'none';
+    document.getElementById('knowledgeBaseInterface').style.display = 'block';
+    
+    // Update account display
+    document.getElementById('kbAccount').textContent = userData.accountId;
+    
+    // Default to chat tab
+    switchKbTab('chat');
+}
+
+function switchKbTab(tabName) {
+    const chatView = document.getElementById('kbChatView');
+    const manageView = document.getElementById('kbManageView');
+    const tabs = document.querySelectorAll('.kb-container .tab');
+    
+    if (tabName === 'chat') {
+        chatView.style.display = 'block';
+        manageView.style.display = 'none';
+        tabs[0].classList.add('active');
+        tabs[1].classList.remove('active');
+    } else {
+        chatView.style.display = 'none';
+        manageView.style.display = 'block';
+        tabs[0].classList.remove('active');
+        tabs[1].classList.add('active');
+        
+        // Load documents when switching to manage tab
+        loadDocuments();
+        setupKbFileUpload();
+    }
+}
+
+async function loadDocuments() {
+    const listContainer = document.getElementById('docList');
+    listContainer.innerHTML = '<div class="text-muted">Loading documents...</div>';
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/knowledgebase/files?account_id=${userData.accountId}`);
+        if (!response.ok) throw new Error("Failed to load documents");
+        
+        const files = await response.json();
+        
+        if (files.length === 0) {
+            listContainer.innerHTML = '<div class="text-muted">No documents uploaded.</div>';
+            return;
+        }
+        
+        let html = '<table class="doc-table" style="width:100%; border-collapse: collapse;">';
+        html += '<thead><tr><th style="text-align:left; padding:8px;">Name</th><th style="text-align:left; padding:8px;">Size</th><th style="padding:8px;">Action</th></tr></thead><tbody>';
+        
+        files.forEach(file => {
+            html += `
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                    <td style="padding: 12px 8px;">${file.filename}</td>
+                    <td style="padding: 12px 8px;">${formatFileSize(file.size)}</td>
+                    <td style="padding: 12px 8px; text-align: center;">
+                        <button class="btn-danger-sm" onclick="deleteDocument('${file.filename}')" style="background:none; border:none; color: var(--error); cursor: pointer;">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += '</tbody></table>';
+        listContainer.innerHTML = html;
+        
+    } catch (error) {
+        listContainer.innerHTML = `<div class="error-text">Error loading documents: ${error.message}</div>`;
+    }
+}
+
+async function deleteDocument(filename) {
+    if (!confirm(`Are you sure you want to delete ${filename}?`)) return;
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/knowledgebase/?account_id=${userData.accountId}&filename=${filename}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) throw new Error("Failed to delete document");
+        
+        loadDocuments(); // Reload list
+        
+    } catch (e) {
+        alert(`Error: ${e.message}`);
+    }
+}
+
+function setupKbFileUpload() {
+    const uploadArea = document.getElementById('kbUploadArea');
+    const fileInput = document.getElementById('kbFileInput');
+    const uploadedFilesDiv = document.getElementById('kbUploadedFiles');
+    
+    // Prevent multiple listeners if called multiple times
+    // We'll just clone and replace to strip listeners
+    
+    const newUploadArea = uploadArea.cloneNode(true);
+    uploadArea.parentNode.replaceChild(newUploadArea, uploadArea);
+    
+    const newFileInput = fileInput.cloneNode(true);
+    fileInput.parentNode.replaceChild(newFileInput, fileInput);
+    
+    newUploadArea.addEventListener('click', () => newFileInput.click());
+    
+    newUploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        newUploadArea.style.borderColor = 'var(--primary)';
+    });
+    
+    newUploadArea.addEventListener('dragleave', () => {
+        newUploadArea.style.borderColor = 'var(--border-color)';
+    });
+    
+    newUploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        newUploadArea.style.borderColor = 'var(--border-color)';
+        const files = Array.from(e.dataTransfer.files);
+        handleKbFiles(files);
+    });
+    
+    newFileInput.addEventListener('change', (e) => {
+        const files = Array.from(e.target.files);
+        handleKbFiles(files);
+    });
+    
+    function handleKbFiles(files) {
+        files.forEach(file => {
+            if (!kbSelectedFiles.find(f => f.name === file.name)) {
+                kbSelectedFiles.push(file);
+                renderKbFileList();
+            }
+        });
+    }
+}
+
+function renderKbFileList() {
+    const div = document.getElementById('kbUploadedFiles');
+    div.innerHTML = '';
+    
+    kbSelectedFiles.forEach(file => {
+        const item = document.createElement('div');
+        item.className = 'file-item';
+        item.innerHTML = `
+            <span>${file.name} (${formatFileSize(file.size)})</span>
+            <span style="color: var(--error); cursor: pointer;" onclick="removeKbFile('${file.name}')">✕</span>
+        `;
+        div.appendChild(item);
+    });
+}
+
+function removeKbFile(name) {
+    kbSelectedFiles = kbSelectedFiles.filter(f => f.name !== name);
+    renderKbFileList();
+}
+
+async function uploadKbDocuments() {
+    if (kbSelectedFiles.length === 0) {
+        alert("Please select files first.");
+        return;
+    }
+    
+    const btn = document.querySelector('#kbManageView .btn-primary');
+    const originalText = btn.textContent;
+    btn.textContent = "Uploading...";
+    btn.disabled = true;
+    
+    try {
+        for (const file of kbSelectedFiles) {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('account_id', userData.accountId);
+
+            const response = await fetch(`${API_BASE_URL}/knowledgebase/`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) throw new Error(`Failed to upload ${file.name}`);
+        }
+        
+        kbSelectedFiles = [];
+        renderKbFileList();
+        loadDocuments();
+        alert("Upload complete!");
+        
+    } catch (e) {
+        alert(`Error: ${e.message}`);
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
+async function submitRagQuery() {
+    const input = document.getElementById('kbQueryInput');
+    const question = input.value.trim();
+    if (!question) return;
+    
+    const loading = document.getElementById('kbLoading');
+    const resultDiv = document.getElementById('kbResult');
+    const answerDiv = document.getElementById('kbAnswerContent');
+    const sourcesDiv = document.getElementById('kbSources');
+    const btn = document.getElementById('kbSubmitBtn');
+    
+    loading.style.display = 'block';
+    resultDiv.style.display = 'none';
+    btn.disabled = true;
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/knowledgebase/ask`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                account_id: userData.accountId,
+                query: question
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) throw new Error(data.detail || "Error asking question");
+        
+        answerDiv.innerHTML = formatMarkdown(data.answer);
+        
+        // Render sources
+        if (data.context && data.context.length > 0) {
+            sourcesDiv.innerHTML = data.context.map((ctx, i) => `
+                <div class="source-item" style="margin-bottom: 0.5rem; padding: 0.5rem; background: rgba(0,0,0,0.03); border-radius: 4px;">
+                    <div style="font-weight: 600; margin-bottom: 0.25rem;">Source Chunk ${i+1}</div>
+                    <div style="font-family: monospace; font-size: 0.8em; white-space: pre-wrap;">${ctx.substring(0, 300)}...</div>
+                </div>
+            `).join('');
+            document.querySelector('.sources-section').style.display = 'block';
+        } else {
+             document.querySelector('.sources-section').style.display = 'none';
+        }
+        
+        resultDiv.style.display = 'block';
+        
+    } catch (e) {
+        alert(`Error: ${e.message}`);
+    } finally {
+        loading.style.display = 'none';
+        btn.disabled = false;
+    }
+}
+
+// Attach to window for onclick access
+window.showKnowledgeBase = showKnowledgeBase;
+window.switchKbTab = switchKbTab;
+window.deleteDocument = deleteDocument;
+window.uploadKbDocuments = uploadKbDocuments;
+window.removeKbFile = removeKbFile;
+window.submitRagQuery = submitRagQuery;

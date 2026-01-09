@@ -128,11 +128,52 @@ class GeminiClient:
                 contents=text,
                 config=types.EmbedContentConfig(task_type=task_type.upper())
             )
+            # Handle single result
             if result.embeddings:
                 return result.embeddings[0].values
             return []
         except Exception as e:
             print(f"Error in GeminiClient.get_embedding (SDK): {e}")
+            return []
+
+    def get_batch_embeddings(self, texts: List[str], task_type="RETRIEVAL_DOCUMENT") -> List[List[float]]:
+        """
+        Get embeddings for a list of texts in a single batch request.
+        """
+        if not texts:
+            return []
+
+        if self.is_mock:
+            return [[0.1] * 768 for _ in texts]
+
+        if not self.client:
+            print("[GeminiClient] ✗ Cannot get batch embeddings: Client not initialized")
+            return []
+
+        try:
+            # The SDK typically supports list of contents for batch embedding
+            # Note: Depending on SDK version, we might need to iterate or it handles it.
+            # Google GenAI SDK `models.embed_content` `contents` can be a list of strings.
+            # But the return type implies multiple embeddings.
+            
+            # For robustness with different SDK versions/limitations, checking if we can pass list.
+            # If not supported directly, we loop here (client side batching), 
+            # but ideally the API supports it.
+            # Based on docs, `contents` can be a list of strings.
+            
+            result = self.client.models.embed_content(
+                model=self.embedding_model,
+                contents=texts,
+                config=types.EmbedContentConfig(task_type=task_type.upper())
+            )
+            
+            if result.embeddings:
+                return [e.values for e in result.embeddings]
+            return []
+            
+        except Exception as e:
+            print(f"Error in GeminiClient.get_batch_embeddings (SDK): {e}")
+            # Fallback to sequential if batch fails? Or just return empty.
             return []
 
     def start_chat(self, history=None, enable_automatic_function_calling=True):
