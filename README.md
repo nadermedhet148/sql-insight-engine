@@ -12,6 +12,7 @@
 Most "Text-to-SQL" tools fail because they don't understand business context. If you ask for "churned users," a standard LLM guesses the logic.
 
 **SQL Insight Engine** solves this by using an **Agentic SQL Analyst** workflow. Unlike static tools, it:
+
 1.  **Discovers Context**: Proactively searches the **Knowledge Base** (ChromaDB) for business logic (e.g., "Churn = Inactive > 30 days") using MCP search tools only when needed.
 2.  **Schema Validation**: Verifies available tables in real-time before attempting to generate queries.
 3.  **Agentic Generation**: Uses a tool-calling loop to describe tables and confirm business rules before writing PostgreSQL.
@@ -23,22 +24,23 @@ Most "Text-to-SQL" tools fail because they don't understand business context. If
 The system uses a **Saga Pattern** with RabbitMQ to manage long-running agentic loops. It combines a state-managed asynchronous execution flow with **MCP (Model Context Protocol)** tools that allow the LLM to dynamically interact with both the database and the knowledge base.
 
 ### System Flow
+
 ```mermaid
 graph TD
     User([User Question]) --> API[FastAPI Entrypoint]
     API --> Store[(Redis State Store)]
     API --> RMQ[(RabbitMQ)]
-    
+
     subgraph Saga_Workers [Saga Workers]
         RMQ --> G[Step 1: Merged Check & Generator]
         G --> E[Step 2: Query Executor]
         E --> F[Step 3: Result Formatter]
     end
-    
+
     G -.->|Update State| Store
     E -.->|Update State| Store
     F -.->|Set Complete| Store
-    
+
     subgraph Agentic_Intelligence [Agentic Intelligence]
         G <--> Gemini{Google Gemini}
         E <--> Gemini
@@ -46,7 +48,7 @@ graph TD
         Gemini <--> MCP_DB[Database MCP Tool]
         Gemini <--> MCP_KB[Knowledge Base MCP Tool]
     end
-    
+
     API -.->|Poll Status| Store
     Store -.->|Final Insight| User
 ```
@@ -58,12 +60,14 @@ graph TD
 The system uses a **centralized MCP Registry** for dynamic service discovery. All MCP services (PostgreSQL tools, ChromaDB tools) register themselves with the registry on startup.
 
 ### MCP Registry Features
+
 - **Redis-backed storage**: Service registrations persist across restarts
 - **Health monitoring**: Background task checks service health every 30 seconds
 - **Automatic cleanup**: Stale services (not seen for 1 hour) are removed
 - **Status tracking**: Each service has a health status (`healthy`, `unhealthy`, `error`)
 
 ### Architecture
+
 ```mermaid
 graph LR
     subgraph MCP_Services
@@ -74,47 +78,50 @@ graph LR
         C2[mcp-chroma:8002]
         C3[mcp-chroma:8002]
     end
-    
+
     subgraph Registry_Layer
         R1[mcp-registry:8010]
         R2[mcp-registry:8010]
         Redis[(Redis)]
     end
-    
+
     P1 & P2 & P3 --> R1
     C1 & C2 & C3 --> R1
     R1 & R2 --> Redis
-    
+
     API[API Server] --> R1
     API --> R2
 ```
 
 ### Registry Endpoints
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/register` | POST | Register an MCP server |
-| `/servers` | GET | List all healthy servers |
-| `/health` | GET | Check registry + Redis health |
+
+| Endpoint    | Method | Description                   |
+| ----------- | ------ | ----------------------------- |
+| `/register` | POST   | Register an MCP server        |
+| `/servers`  | GET    | List all healthy servers      |
+| `/health`   | GET    | Check registry + Redis health |
 
 ---
 
 ## 🏢 Infrastructure Setup
 
 ### Services Overview
-| Service | Port | Description |
-|---------|------|-------------|
-| `api` | 8001 | Main FastAPI application |
-| `mcp-registry` | 8010 | Service discovery registry |
-| `mcp-postgres` | 8011 | PostgreSQL MCP tools |
-| `mcp-chroma` | 8012 | ChromaDB MCP tools |
-| `metadata_store` | 5432 | Internal metadata PostgreSQL |
-| `external_test_db` | 5433 | External test database |
-| `rabbitmq` | 5672/15672 | Message queue |
-| `redis` | 6379 | State store & registry storage |
-| `chromadb` | 8000 | Vector database |
-| `minio` | 9000/9001 | Object storage |
+
+| Service            | Port       | Description                    |
+| ------------------ | ---------- | ------------------------------ |
+| `api`              | 8001       | Main FastAPI application       |
+| `mcp-registry`     | 8010       | Service discovery registry     |
+| `mcp-postgres`     | 8011       | PostgreSQL MCP tools           |
+| `mcp-chroma`       | 8012       | ChromaDB MCP tools             |
+| `metadata_store`   | 5432       | Internal metadata PostgreSQL   |
+| `external_test_db` | 5433       | External test database         |
+| `rabbitmq`         | 5672/15672 | Message queue                  |
+| `redis`            | 6379       | State store & registry storage |
+| `chromadb`         | 8000       | Vector database                |
+| `minio`            | 9000/9001  | Object storage                 |
 
 ### Docker Networks
+
 - **`sql-insight-engine_insight_network`**: Bridge network for docker-compose
 - **`insight_insight_network`**: Overlay network for Docker Swarm
 
@@ -123,12 +130,15 @@ graph LR
 ## 🚀 Getting Started
 
 ### Requirements
+
 - Docker & Docker Compose
 - Python 3.11+ (for local development)
 - Google Gemini API Key
 
 ### Environment Variables
+
 Create a `.env` file in the project root:
+
 ```bash
 # Gemini
 GEMINI_API_KEY=your_api_key
@@ -157,6 +167,7 @@ MINIO_ROOT_PASSWORD=minioadmin
 ## 🏃 How to Run
 
 ### Option 1: Docker Compose (Development)
+
 The easiest way to run the entire stack:
 
 ```bash
@@ -168,6 +179,7 @@ docker compose up -d --build
 ```
 
 ### Option 2: Docker Swarm (Production/Scaling)
+
 For running with replicas and load balancing:
 
 ```bash
@@ -176,6 +188,7 @@ For running with replicas and load balancing:
 ```
 
 This will:
+
 1. Initialize Docker Swarm if not already active
 2. Build all images
 3. Deploy the stack with Traefik load balancer
@@ -205,15 +218,17 @@ python apps/sql-insight-engine/scripts/setup_test_data.py
 ## 🗄️ Database Configuration
 
 ### Connecting to External Databases
+
 When configuring a user's database connection:
 
-| Context | Host | Port |
-|---------|------|------|
-| From inside Docker | `external_test_db` | `5432` |
-| From host machine | `localhost` | `5433` |
+| Context              | Host                   | Port   |
+| -------------------- | ---------------------- | ------ |
+| From inside Docker   | `external_test_db`     | `5432` |
+| From host machine    | `localhost`            | `5433` |
 | From Docker via host | `host.docker.internal` | `5433` |
 
 ### Database Migrations
+
 We use **Alembic** to manage database schema changes for the Metadata Database.
 
 ```bash
@@ -235,17 +250,20 @@ alembic history --verbose
 ## 🧪 Testing
 
 ### Setup Test Database
+
 ```bash
 source venv/bin/activate
 python apps/sql-insight-engine/scripts/setup_test_data.py
 ```
 
 This creates:
+
 - 100 users
 - 1,000 products
 - 10,000 orders
 
 ### Query the System
+
 1. Open the UI: `python apps/sql-insight-engine/serve_ui.py`
 2. Create a user and configure database connection
 3. Ask questions like: "What are my top 5 customers by total order amount?"
@@ -255,7 +273,9 @@ This creates:
 ## ☸️ Managing Deployments (Helm)
 
 ### Apply Configuration Changes
+
 If you modify `values.yaml` (e.g., scaling replicas), apply changes without rebuilding images:
+
 ```bash
 helm upgrade --install sql-insight-engine ./helm/sql-insight-engine \
     --namespace sql-insight-engine \
@@ -263,6 +283,7 @@ helm upgrade --install sql-insight-engine ./helm/sql-insight-engine \
 ```
 
 ### Apply Code Changes
+
 If you modify application code (e.g., Python files), you must rebuild the image, import it into the cluster, and restart the deployment:
 
 ```bash
@@ -275,6 +296,7 @@ kubectl rollout restart deployment sql-insight-engine-api -n sql-insight-engine
 ## Helpful Commands
 
 ### Check Logs
+
 ```bash
 # API Logs
 kubectl logs -n sql-insight-engine -l app.kubernetes.io/component=api --tail=100 -f
@@ -290,6 +312,7 @@ kubectl logs -n sql-insight-engine -l app.kubernetes.io/component=mcp-registry -
 ```
 
 ### Port Forwarding
+
 ```bash
 # Main API (http://localhost:8000)
 kubectl port-forward svc/sql-insight-engine-api 8000:8000 -n sql-insight-engine

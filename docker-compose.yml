@@ -221,5 +221,4 @@ volumes:
 
 networks:
   insight_network:
-
     driver: bridge
