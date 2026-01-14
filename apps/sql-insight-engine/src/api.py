@@ -123,4 +123,13 @@ async def health_check():
     return {"status": "healthy"}
 
 if __name__ == "__main__":
-    uvicorn.run("api:app", host="0.0.0.0", port=8002, reload=True)
+    import multiprocessing
+    workers = int(os.getenv("UVICORN_WORKERS", multiprocessing.cpu_count()))
+    uvicorn.run(
+        "api:app",
+        host="0.0.0.0",
+        port=8000,
+        workers=workers,
+        limit_concurrency=200,
+        limit_max_requests=10000,
+    )

@@ -18,7 +18,13 @@ if "@" in DATABASE_URL:
 
 print(f"DATABASE_URL being used: {masked_url}")
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=50,           # Increased from default 5
+    max_overflow=50,        # Allow 50 additional connections beyond pool_size
+    pool_pre_ping=True,     # Verify connections before use
+    pool_recycle=3600,      # Recycle connections after 1 hour
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()

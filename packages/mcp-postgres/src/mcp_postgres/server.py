@@ -213,4 +213,13 @@ async def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    import multiprocessing
+    workers = int(os.getenv("UVICORN_WORKERS", multiprocessing.cpu_count()))
+    uvicorn.run(
+        "mcp_postgres.server:app",
+        host="0.0.0.0",
+        port=8001,
+        workers=workers,
+        limit_concurrency=200,
+        limit_max_requests=10000,
+    )

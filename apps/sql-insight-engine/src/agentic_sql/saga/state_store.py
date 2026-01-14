@@ -1,10 +1,29 @@
-
 import json
 import redis
+from redis import ConnectionPool
 import os
 from typing import Dict, Optional
 from datetime import datetime, timedelta
 from prometheus_client import Counter, Histogram
+
+# Global Redis connection pool for better performance
+_redis_pool: Optional[ConnectionPool] = None
+
+def _get_redis_pool(host: str, port: int, db: int) -> ConnectionPool:
+    """Get or create a global Redis connection pool."""
+    global _redis_pool
+    if _redis_pool is None:
+        _redis_pool = ConnectionPool(
+            host=host,
+            port=port,
+            db=db,
+            max_connections=100,  # Allow up to 100 concurrent connections
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+            retry_on_timeout=True,
+        )
+    return _redis_pool
 
 # Defining Metrics
 SAGA_COMPLETION_TOTAL = Counter(
@@ -20,10 +39,11 @@ SAGA_DURATION_SECONDS = Histogram(
 )
 
 class SagaStateStore:
-    
+
     def __init__(self, host: str = None, port: int = 6379, db: int = 0):
         host = host or os.getenv("REDIS_HOST", "localhost")
-        self._redis = redis.Redis(host=host, port=port, db=db, decode_responses=True)
+        pool = _get_redis_pool(host, port, db)
+        self._redis = redis.Redis(connection_pool=pool)
         self._ttl_seconds = 3600  # 1 hour TTL
     
     def _record_metrics(self, status: str, started_at_iso: Optional[str]):

@@ -49,12 +49,18 @@ logger = logging.getLogger("mcp-chroma")
 class ChromaMCPServer:
     def __init__(self, server_name: str = "mcp-chroma"):
         self.server_name = server_name
+        self._client = None
+        self._client_lock = asyncio.Lock()
         logger.info(f"Initialized ChromaMCPServer helper: {server_name}")
-        
+
     def _get_client(self):
-        host = os.getenv("CHROMA_HOST", "localhost")
-        port = os.getenv("CHROMA_PORT", "8000")
-        return chromadb.HttpClient(host=host, port=int(port))
+        """Get or create a cached ChromaDB client."""
+        if self._client is None:
+            host = os.getenv("CHROMA_HOST", "localhost")
+            port = os.getenv("CHROMA_PORT", "8000")
+            logger.info(f"Creating ChromaDB client connection to {host}:{port}")
+            self._client = chromadb.HttpClient(host=host, port=int(port))
+        return self._client
 
     async def _get_embedding_from_mcp(self, text: str) -> List[float]:
         try:
@@ -221,4 +227,13 @@ async def metrics():
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8002)
+    import multiprocessing
+    workers = int(os.getenv("UVICORN_WORKERS", multiprocessing.cpu_count()))
+    uvicorn.run(
+        "mcp_chroma.server:app",
+        host="0.0.0.0",
+        port=8002,
+        workers=workers,
+        limit_concurrency=200,
+        limit_max_requests=10000,
+    )

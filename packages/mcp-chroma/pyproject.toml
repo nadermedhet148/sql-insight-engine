@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "MCP Server for ChromaDB"
 dependencies = [
     "mcp[server]",
-    "chromadb",
+    "chromadb==0.5.23",
     "python-dotenv",
     "uvicorn",
     "fastapi",
