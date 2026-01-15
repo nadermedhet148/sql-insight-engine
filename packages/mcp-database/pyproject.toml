@@ -1,0 +1,20 @@
+[project]
+name = "mcp-database"
+version = "0.1.0"
+description = "MCP Server for Multiple Databases (PostgreSQL, MySQL, MSSQL)"
+dependencies = [
+    "mcp[server]",
+    "sqlalchemy",
+    "psycopg2-binary",
+    "pymysql",
+    "pymssql",
+    "python-dotenv",
+    "uvicorn",
+    "fastapi",
+    "httpx",
+    "prometheus-client"
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

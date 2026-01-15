@@ -5,27 +5,29 @@ This directory contains Helm charts for deploying the SQL Insight Engine on Kube
 ## Prerequisites
 
 - **Minikube**: v1.30.0 or later
-- **kubectl**: v1.27.0 or later  
+- **kubectl**: v1.27.0 or later
 - **Helm**: v3.12.0 or later
 - **Docker**: For building images
 
 ## Quick Start
 
 1. **Install prerequisites** (if not already installed):
+
    ```bash
    # Install Minikube
    curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
    sudo install minikube-linux-amd64 /usr/local/bin/minikube
-   
+
    # Install kubectl
    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
    sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-   
+
    # Install Helm
    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
    ```
 
 2. **Set up environment variables**:
+
    ```bash
    cp .env.example .env
    # Edit .env and add your GEMINI_API_KEY
@@ -41,12 +43,14 @@ This directory contains Helm charts for deploying the SQL Insight Engine on Kube
 The Helm chart deploys the following components:
 
 ### Application Services
+
 - **API** (1 replica): Main FastAPI application
-- **MCP Postgres** (3 replicas): PostgreSQL MCP service
+- **MCP Database** (3 replicas): Database MCP service (Multi-dialect)
 - **MCP Chroma** (3 replicas): ChromaDB MCP service
 - **MCP Registry** (2 replicas): Service registry
 
 ### Infrastructure Services
+
 - **PostgreSQL**: Metadata database (StatefulSet)
 - **External Test DB**: Test database (StatefulSet)
 - **Redis**: Caching and session storage
@@ -55,6 +59,7 @@ The Helm chart deploys the following components:
 - **MinIO**: Object storage
 
 ### Observability Stack
+
 - **Prometheus**: Metrics collection
 - **Grafana**: Metrics visualization
 - **Loki**: Log aggregation
@@ -69,7 +74,7 @@ Edit `helm/sql-insight-engine/values.yaml` to customize:
 
 ```yaml
 api:
-  replicaCount: 1  # Scale API instances
+  replicaCount: 1 # Scale API instances
   resources:
     requests:
       memory: "512Mi"
@@ -119,8 +124,8 @@ kubectl port-forward svc/sql-insight-engine-rabbitmq 15672:15672 -n sql-insight-
 # API logs
 kubectl logs -f deployment/sql-insight-engine-api -n sql-insight-engine
 
-# MCP Postgres logs
-kubectl logs -f deployment/sql-insight-engine-mcp-postgres -n sql-insight-engine
+# MCP Database logs
+kubectl logs -f deployment/sql-insight-engine-mcp-database -n sql-insight-engine
 
 # All pods
 kubectl logs -f -l app.kubernetes.io/instance=sql-insight-engine -n sql-insight-engine
@@ -203,16 +208,16 @@ minikube delete
 
 ## Differences from Docker Swarm
 
-| Feature | Docker Swarm | Kubernetes |
-|---------|-------------|------------|
-| Orchestration | Simpler, less features | More complex, feature-rich |
-| Scaling | Manual or basic | Advanced autoscaling |
-| Health Checks | Basic | Liveness, Readiness, Startup probes |
-| Storage | Volumes | PersistentVolumes, StatefulSets |
-| Networking | Overlay networks | Services, Ingress, NetworkPolicies |
-| Configuration | Environment variables | ConfigMaps, Secrets |
-| Rolling Updates | Basic | Advanced with rollback |
-| Resource Limits | Basic | Requests and Limits |
+| Feature         | Docker Swarm           | Kubernetes                          |
+| --------------- | ---------------------- | ----------------------------------- |
+| Orchestration   | Simpler, less features | More complex, feature-rich          |
+| Scaling         | Manual or basic        | Advanced autoscaling                |
+| Health Checks   | Basic                  | Liveness, Readiness, Startup probes |
+| Storage         | Volumes                | PersistentVolumes, StatefulSets     |
+| Networking      | Overlay networks       | Services, Ingress, NetworkPolicies  |
+| Configuration   | Environment variables  | ConfigMaps, Secrets                 |
+| Rolling Updates | Basic                  | Advanced with rollback              |
+| Resource Limits | Basic                  | Requests and Limits                 |
 
 ## Production Considerations
 

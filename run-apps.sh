@@ -8,7 +8,7 @@ NAMESPACE="sql-insight-engine"
 
 # 0. Clean up old images
 echo "Cleaning up old images..."
-IMAGES_TO_CLEAN="sql-insight-engine-api:latest sql-insight-engine-mcp-postgres:latest sql-insight-engine-mcp-chroma:latest sql-insight-engine-mcp-registry:latest sql-insight-engine-ui:latest"
+IMAGES_TO_CLEAN="sql-insight-engine-api:latest sql-insight-engine-mcp-database:latest sql-insight-engine-mcp-chroma:latest sql-insight-engine-mcp-registry:latest sql-insight-engine-ui:latest"
 for img in $IMAGES_TO_CLEAN; do
    echo "Removing $img..."
    docker rmi -f $img || true
@@ -25,26 +25,27 @@ TAG=$(date +%s)
 echo "Tagging images with version: $TAG"
 
 docker tag sql-insight-engine-api:latest sql-insight-engine-api:$TAG
-docker tag sql-insight-engine-mcp-postgres:latest sql-insight-engine-mcp-postgres:$TAG
+docker tag sql-insight-engine-mcp-database:latest sql-insight-engine-mcp-database:$TAG
 docker tag sql-insight-engine-mcp-chroma:latest sql-insight-engine-mcp-chroma:$TAG
 docker tag sql-insight-engine-mcp-registry:latest sql-insight-engine-mcp-registry:$TAG
 docker tag sql-insight-engine-ui:latest sql-insight-engine-ui:$TAG
 
 echo "Importing images into K3s..."
-APP_IMAGES="sql-insight-engine-api:$TAG sql-insight-engine-mcp-postgres:$TAG sql-insight-engine-mcp-chroma:$TAG sql-insight-engine-mcp-registry:$TAG sql-insight-engine-ui:$TAG"
+APP_IMAGES="sql-insight-engine-api:$TAG sql-insight-engine-mcp-database:$TAG sql-insight-engine-mcp-chroma:$TAG sql-insight-engine-mcp-registry:$TAG sql-insight-engine-ui:$TAG"
 
 for img in $APP_IMAGES; do
     import_image_to_k3s "$img"
 done
 
 # 2. Check if release exists
+# For this refactor, we want to force using the new values.yaml, so we do NOT use --reuse-values
 REUSE_VALUES=""
-if helm status sql-insight-engine -n $NAMESPACE >/dev/null 2>&1; then
-    echo "Release exists, reusing existing values..."
-    REUSE_VALUES="--reuse-values"
-else
-    echo "Release does not exist, creating new installation..."
-fi
+# if helm status sql-insight-engine -n $NAMESPACE >/dev/null 2>&1; then
+#     echo "Release exists, reusing existing values..."
+#     REUSE_VALUES="--reuse-values"
+# else
+#     echo "Release does not exist, creating new installation..."
+# fi
 
 # 3. Deploy Applications via Helm
 echo "Deploying Applications..."
@@ -55,9 +56,9 @@ helm upgrade --install sql-insight-engine ./helm/sql-insight-engine \
     --set api.image.tag=$TAG \
     --set ui.enabled=true \
     --set ui.image.tag=$TAG \
-    --set mcpPostgres.enabled=true \
-    --set mcpPostgres.replicaCount=6 \
-    --set mcpPostgres.image.tag=$TAG \
+    --set mcpDatabase.enabled=true \
+    --set mcpDatabase.replicaCount=6 \
+    --set mcpDatabase.image.tag=$TAG \
     --set mcpChroma.enabled=true \
     --set mcpChroma.replicaCount=6 \
     --set mcpChroma.image.tag=$TAG \
@@ -65,13 +66,21 @@ helm upgrade --install sql-insight-engine ./helm/sql-insight-engine \
     --set mcpRegistry.image.tag=$TAG \
     --set secrets.geminiApiKey="${GEMINI_API_KEY}" \
     --set api.env.MOCK_GEMINI="fasle" \
+    --set postgresql.enabled=true \
+    --set externalTestDb.enabled=true \
+    --set redis.enabled=true \
+    --set rabbitmq.enabled=true \
+    --set minio.enabled=true \
+    --set chromadb.enabled=true \
+    --set mcpChroma.resources.limits.memory="1Gi" \
+    --set mcpChroma.resources.requests.memory="512Mi" \
     --create-namespace \
     --namespace $NAMESPACE
 
 echo "Restarting deployments to pick up new images..."
 # Rollout might not be strictly necessary with new tags, but good for safety
 kubectl rollout restart deployment sql-insight-engine-api -n $NAMESPACE
-kubectl rollout restart deployment sql-insight-engine-mcp-postgres -n $NAMESPACE
+kubectl rollout restart deployment sql-insight-engine-mcp-database -n $NAMESPACE
 kubectl rollout restart deployment sql-insight-engine-mcp-chroma -n $NAMESPACE
 kubectl rollout restart deployment sql-insight-engine-mcp-registry -n $NAMESPACE
 kubectl rollout restart deployment sql-insight-engine-ui -n $NAMESPACE
@@ -79,7 +88,7 @@ kubectl rollout restart deployment sql-insight-engine-ui -n $NAMESPACE
 echo ""
 echo "=== Applications Deployment Complete ==="
 echo ""
-kubectl get pods -n $NAMESPACE -l "app.kubernetes.io/component in (api,ui,mcp-postgres,mcp-chroma,mcp-registry)"
+kubectl get pods -n $NAMESPACE -l "app.kubernetes.io/component in (api,ui,mcp-database,mcp-chroma,mcp-registry)"
 
 echo ""
 echo "🌐 Access URLs:"

@@ -71,9 +71,9 @@ The system uses a **centralized MCP Registry** for dynamic service discovery. Al
 ```mermaid
 graph LR
     subgraph MCP_Services
-        P1[mcp-postgres:8001]
-        P2[mcp-postgres:8001]
-        P3[mcp-postgres:8001]
+        P1[mcp-database:8001]
+        P2[mcp-database:8001]
+        P3[mcp-database:8001]
         C1[mcp-chroma:8002]
         C2[mcp-chroma:8002]
         C3[mcp-chroma:8002]
@@ -107,18 +107,18 @@ graph LR
 
 ### Services Overview
 
-| Service            | Port       | Description                    |
-| ------------------ | ---------- | ------------------------------ |
-| `api`              | 8001       | Main FastAPI application       |
-| `mcp-registry`     | 8010       | Service discovery registry     |
-| `mcp-postgres`     | 8011       | PostgreSQL MCP tools           |
-| `mcp-chroma`       | 8012       | ChromaDB MCP tools             |
-| `metadata_store`   | 5432       | Internal metadata PostgreSQL   |
-| `external_test_db` | 5433       | External test database         |
-| `rabbitmq`         | 5672/15672 | Message queue                  |
-| `redis`            | 6379       | State store & registry storage |
-| `chromadb`         | 8000       | Vector database                |
-| `minio`            | 9000/9001  | Object storage                 |
+| Service            | Port       | Description                        |
+| ------------------ | ---------- | ---------------------------------- |
+| `api`              | 8001       | Main FastAPI application           |
+| `mcp-registry`     | 8010       | Service discovery registry         |
+| `mcp-database`     | 8011       | Database MCP tools (Multi-dialect) |
+| `mcp-chroma`       | 8012       | ChromaDB MCP tools                 |
+| `metadata_store`   | 5432       | Internal metadata PostgreSQL       |
+| `external_test_db` | 5433       | External test database             |
+| `rabbitmq`         | 5672/15672 | Message queue                      |
+| `redis`            | 6379       | State store & registry storage     |
+| `chromadb`         | 8000       | Vector database                    |
+| `minio`            | 9000/9001  | Object storage                     |
 
 ### Docker Networks
 
@@ -192,7 +192,7 @@ This will:
 1. Initialize Docker Swarm if not already active
 2. Build all images
 3. Deploy the stack with Traefik load balancer
-4. Create replicas: 3x mcp-postgres, 3x mcp-chroma, 2x mcp-registry
+4. Create replicas: 3x mcp-database, 3x mcp-chroma, 2x mcp-registry
 
 ### Useful Commands
 
@@ -301,8 +301,8 @@ kubectl rollout restart deployment sql-insight-engine-api -n sql-insight-engine
 # API Logs
 kubectl logs -n sql-insight-engine -l app.kubernetes.io/component=api --tail=100 -f
 
-# MCP Postgres Logs
-kubectl logs -n sql-insight-engine -l app.kubernetes.io/component=mcp-postgres --tail=100 -f
+# MCP Database Logs
+kubectl logs -n sql-insight-engine -l app.kubernetes.io/component=mcp-database --tail=100 -f
 
 # MCP Chroma Logs
 kubectl logs -n sql-insight-engine -l app.kubernetes.io/component=mcp-chroma --tail=100 -f

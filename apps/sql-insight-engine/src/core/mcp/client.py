@@ -211,6 +211,7 @@ class DynamicMCPManager:
 
     async def refresh_tools(self, retries=3, delay=2, force=False):
         """Fetch all servers from registry and their tools with retries"""
+        # Simple debounce
         if not force and self.tools_map and (time.time() - getattr(self, 'last_refresh_time', 0) < 60):
             return
 
@@ -266,6 +267,19 @@ class DynamicMCPManager:
         print("Max retries reached for MCP refresh. Using cached tools if available.")
         if not self.tools_map:
              print("CRITICAL: No tools available in cache.")
+
+    def refresh_tools_sync(self, force=False):
+        """Sync wrapper for refresh_tools to allow usage in synchronous contexts"""
+        try:
+             loop = _get_shared_loop()
+             future = asyncio.run_coroutine_threadsafe(
+                 self.refresh_tools(force=force),
+                 loop
+             )
+             # Wait for result with timeout
+             return future.result(timeout=20.0)
+        except Exception as e:
+            print(f"Error in refresh_tools_sync: {e}")
 
     def get_gemini_tools(self, message: Any = None, context: Dict[str, Any] = None) -> List[Callable]:
         """Convert all discovered tools into Gemini-compatible functions"""
@@ -388,6 +402,9 @@ async def initialize_mcp():
 def get_discovered_tools(message: Any = None, context: Dict[str, Any] = None) -> List[Callable]:
     """Helper to get tools from the global manager - uses cached tools."""
     if not mcp_manager.tools_map:
-        print("[DEBUG] No cached tools available - will use empty tool list")
+        print("[DEBUG] No cached tools available - attempting sync refresh...")
+        mcp_manager.refresh_tools_sync(force=True)
+        if not mcp_manager.tools_map:
+            print("[DEBUG] Still no tools after refresh.")
 
     return mcp_manager.get_gemini_tools(message, context)

@@ -41,6 +41,20 @@ def run_agentic_sql_generation(message: QueryInitiatedMessage, db_config_dict: D
     all_tools = get_discovered_tools(message=message, context={"db_url": db_url, "account_id": message.account_id})
     # Generator should NOT have run_query to prevent premature execution
     tools = [t for t in all_tools if t.__name__ != "run_query"]
+    
+    # Ensure we have the critical database tools
+    if not any(t.__name__ == "list_tables" for t in tools):
+        print(f"[SAGA STEP 1] ⚠ Critical tool 'list_tables' missing. Forcing MCP refresh...")
+        from core.mcp.client import mcp_manager
+        mcp_manager.refresh_tools_sync(force=True)
+        # Re-fetch tools
+        all_tools = get_discovered_tools(message=message, context={"db_url": db_url, "account_id": message.account_id})
+        tools = [t for t in all_tools if t.__name__ != "run_query"]
+    
+    if not any(t.__name__ == "list_tables" for t in tools):
+         print(f"[SAGA STEP 1] 🛑 Still missing 'list_tables' tool after refresh. Available: {[t.__name__ for t in tools]}")
+         # Proceeding will likely result in OUT_OF_SCOPE, but at least we warned.
+
     agent = GeminiClient(tools=tools)
     
     prompt = f"""You are a Senior SQL Analyst and Gatekeeper. Your goal is to write a PostgreSQL query for: "{message.question}"

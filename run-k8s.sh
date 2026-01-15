@@ -59,7 +59,7 @@ docker build -t sql-insight-engine-ui:latest ./apps/sql-insight-engine/ui
 # Tag images for Kubernetes
 echo "Tagging images..."
 docker tag sql-insight-engine-api:latest sql-insight-engine-api:latest
-docker tag sql-insight-engine-mcp-postgres:latest sql-insight-engine-mcp-postgres:latest
+docker tag sql-insight-engine-mcp-database:latest sql-insight-engine-mcp-database:latest
 docker tag sql-insight-engine-mcp-chroma:latest sql-insight-engine-mcp-chroma:latest
 docker tag sql-insight-engine-mcp-registry:latest sql-insight-engine-mcp-registry:latest
 
@@ -67,8 +67,8 @@ docker tag sql-insight-engine-mcp-registry:latest sql-insight-engine-mcp-registr
 echo "Importing images into k3s containerd..."
 echo "  - Importing sql-insight-engine-api..."
 docker save sql-insight-engine-api:latest | sudo k3s ctr images import -
-echo "  - Importing sql-insight-engine-mcp-postgres..."
-docker save sql-insight-engine-mcp-postgres:latest | sudo k3s ctr images import -
+echo "  - Importing sql-insight-engine-mcp-database..."
+docker save sql-insight-engine-mcp-database:latest | sudo k3s ctr images import -
 echo "  - Importing sql-insight-engine-mcp-chroma..."
 docker save sql-insight-engine-mcp-chroma:latest | sudo k3s ctr images import -
 echo "  - Importing sql-insight-engine-mcp-registry..."
