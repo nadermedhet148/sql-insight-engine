@@ -48,8 +48,8 @@ data:
             regex: http
         metrics_path: /metrics
 
-      # MCP Postgres
-      - job_name: 'mcp-postgres'
+      # MCP Database
+      - job_name: 'mcp-database'
         kubernetes_sd_configs:
           - role: endpoints
             namespaces:
@@ -58,7 +58,7 @@ data:
         relabel_configs:
           - source_labels: [__meta_kubernetes_service_name]
             action: keep
-            regex: {{ include "sql-insight-engine.fullname" . }}-mcp-postgres
+            regex: {{ include "sql-insight-engine.fullname" . }}-mcp-database
           - source_labels: [__meta_kubernetes_endpoint_port_name]
             action: keep
             regex: http

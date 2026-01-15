@@ -11,6 +11,7 @@ services:
       - insight_network
     environment:
       - REDIS_HOST=redis
+      - 'MCP_SERVICES=[{"name": "mcp-database", "url": "http://mcp-database:8001/sse"}, {"name": "mcp-chroma", "url": "http://mcp-chroma:8002/sse"}]'
 
   metadata_store:
     image: postgres:15
@@ -67,10 +68,10 @@ services:
     networks:
       - insight_network
 
-  mcp-postgres:
+  mcp-database:
     build:
-      context: ./packages/mcp-postgres
-    container_name: mcp-postgres
+      context: ./packages/mcp-database
+    container_name: mcp-database
     ports:
       - "8011:8001"
     env_file:
@@ -113,11 +114,11 @@ services:
       - RABBITMQ_HOST=rabbitmq
       - CHROMA_HOST=chromadb
       - MINIO_HOST=minio
-      - POSTGRES_MCP_URL=http://mcp-postgres:8001/sse
+      - DATABASE_MCP_URL=http://mcp-database:8001/sse
       - CHROMA_MCP_URL=http://mcp-chroma:8002/sse
       - DB_URL=${EXTERNAL_TEST_DB_URL}
       - MCP_REGISTRY_URL=http://mcp-registry:8010
-      - MCP_SERVER_URL=http://mcp-postgres:8001/sse
+      - MCP_SERVER_URL=http://mcp-database:8001/sse
       - PYTHONUNBUFFERED=1
     depends_on:
       - metadata_store
@@ -125,7 +126,7 @@ services:
       - minio
       - rabbitmq
       - redis
-      - mcp-postgres
+      - mcp-database
       - mcp-chroma
       - mcp-registry
     networks:

@@ -595,8 +595,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(mcp_postgres_requests_total[5m])",
-          "legendFormat": "mcp-postgres - {{endpoint}}",
+          "expr": "rate(mcp_database_requests_total[5m])",
+          "legendFormat": "mcp-database - {{endpoint}}",
           "refId": "A"
         },
         {

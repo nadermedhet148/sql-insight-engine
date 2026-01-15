@@ -7,12 +7,15 @@ global:
   storageClass: local-path
 
 # API Service
+# ... (Keep global)
+
+# API Service
 api:
   enabled: false
   replicaCount: 6
   image:
     repository: sql-insight-engine-api
-    tag: latest
+    tag: "1768497562" # Fixed tag
     pullPolicy: Never # Override for local image
   service:
     type: NodePort
@@ -29,12 +32,12 @@ api:
     pythonUnbuffered: "1"
 
 # MCP Services
-mcpPostgres:
+mcpDatabase:
   enabled: false
   replicaCount: 6
   image:
-    repository: sql-insight-engine-mcp-postgres
-    tag: latest
+    repository: sql-insight-engine-mcp-database
+    tag: "1768497562" # Fixed tag
     pullPolicy: Never # Override for local image
   service:
     port: 8001
@@ -44,14 +47,19 @@ mcpPostgres:
       cpu: "100m"
     limits:
       memory: "512Mi"
-      cpu: "200m"
+      cpu: "500m" # Increased limit
+  env:
+    UVICORN_WORKERS: "1"
+    MCP_REGISTRY_URL: "http://sql-insight-engine-mcp-registry:8010"
+    MCP_SERVER_URL: "http://sql-insight-engine-mcp-database:8001/sse"
+    PYTHONUNBUFFERED: "1"
 
 mcpChroma:
   enabled: false
   replicaCount: 8
   image:
     repository: sql-insight-engine-mcp-chroma
-    tag: latest
+    tag: "1768497562"
     pullPolicy: Never # Override for local image
   service:
     port: 8002
@@ -68,7 +76,7 @@ mcpRegistry:
   replicaCount: 2
   image:
     repository: sql-insight-engine-mcp-registry
-    tag: latest
+    tag: "1768497562"
     pullPolicy: Never # Override for local image
   service:
     port: 8010
@@ -79,6 +87,18 @@ mcpRegistry:
     limits:
       memory: "256Mi"
       cpu: "100m"
+
+# Infrastructure Services
+# ... (rest of file)
+ui:
+  enabled: false
+  image:
+    repository: sql-insight-engine-ui
+    tag: "1768497562"
+    pullPolicy: Never
+  service:
+    type: ClusterIP
+    port: 80
 
 # Infrastructure Services
 postgresql:
