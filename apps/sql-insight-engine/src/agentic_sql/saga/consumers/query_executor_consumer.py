@@ -1,0 +1,229 @@
+import asyncio
+import json
+import time
+import socket
+from typing import Dict, Any, List
+from agentic_sql.saga.messages import (
+    QueryGeneratedMessage, QueryExecutedMessage,
+    SagaErrorMessage, message_from_dict
+)
+from agentic_sql.saga.publisher import SagaPublisher
+from core.gemini_client import GeminiClient
+from core.mcp.client import initialize_mcp, get_discovered_tools
+from agentic_sql.saga.utils import (
+    sanitize_for_json, update_saga_state, store_saga_error, 
+    get_interaction_history, parse_llm_response, extract_response_metadata
+)
+from agentic_sql.saga.consumers.metrics import (
+    INSTANCE_ID, SAGA_CONSUMER_MESSAGES, SAGA_CONSUMER_DURATION
+)
+
+
+
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
+
+# Global engine cache: keys are DB URL strings, values are Engine objects
+_db_engines = {}
+
+def get_or_create_engine(db_url: str):
+    """Get existing engine or create a new one with pooling"""
+    global _db_engines
+    if db_url not in _db_engines:
+        # Create engine with reasonable pool settings
+        _db_engines[db_url] = create_engine(
+            db_url, 
+            connect_args={'connect_timeout': 5},
+            pool_size=10, 
+            max_overflow=20,
+            pool_recycle=3600
+        )
+    return _db_engines[db_url]
+
+def execute_query_native(db_config_dict: Dict[str, Any], sql: str) -> tuple[bool, str, str]:
+    """Execute SQL query directly against the database using SQLAlchemy"""
+    db_url = f"postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}"
+    
+    # Strip whitespace and trailing semicolon for better processing
+    sql = sql.strip()
+    
+    # Remove markers if they slipped through
+    sql = sql.replace("```sql", "").replace("```postgresql", "").replace("```", "").strip()
+    if sql.lower().startswith("sql"):
+        sql = sql[3:].strip()
+        
+    if sql.endswith(';'):
+        sql = sql[:-1]
+        
+    sql_upper = sql.upper()
+    
+    # 1. Critical safety check: Refuse DDL/DML
+    forbidden_keywords = ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "TRUNCATE", "GRANT", "REVOKE"]
+    for kw in forbidden_keywords:
+        # Check for keyword with spaces or at start/end to avoid partial matches
+        if f" {kw} " in f" {sql_upper} ":
+             return False, f"Query contains forbidden DDL/DML keyword: {kw}", "Safety violation"
+    
+    # 2. Must be a SELECT
+    if "SELECT" not in sql_upper:
+        return False, "Only SELECT queries are allowed.", "Not a SELECT query"
+
+    # 3. Safety: Enforce LIMIT 10 if no limit present or if limit is too high
+    # Simple check for LIMIT keyword
+    if "LIMIT" not in sql_upper:
+        sql = f"{sql} LIMIT 10"
+    
+    print(f"[TRACE] Executing native SQL: {sql}")
+
+    try:
+        # Reuse engine from cache
+        engine = get_or_create_engine(db_url)
+        with engine.connect() as connection:
+            result = connection.execute(text(sql))
+            
+            # Fetch all rows
+            rows = result.fetchall()
+            
+            if not rows:
+                return True, "[]", "Query executed successfully but returned no rows"
+            
+            # Format results as JSON list of dicts for the formatter
+            columns = result.keys()
+            formatted_results = []
+            for row in rows:
+                formatted_results.append(dict(zip(columns, row)))
+            
+            return True, json.dumps(formatted_results, indent=2, default=str), f"Successfully executed query and retrieved {len(rows)} rows"
+            
+    except SQLAlchemyError as e:
+        print(f"[SAGA STEP 2] Database error: {str(e)}")
+        return False, str(e), "Database execution error"
+    except Exception as e:
+        print(f"[SAGA STEP 2] Unexpected execution error: {str(e)}")
+        return False, str(e), "Unknown execution error"
+
+from core.infra.consumer import BaseConsumer
+
+class QueryExecutorConsumer(BaseConsumer):
+    def __init__(self, host: str = None):
+        super().__init__(queue_name=SagaPublisher.QUEUE_EXECUTE_QUERY, host=host, prefetch_count=20)
+
+    def process_message(self, ch, method, properties, body):
+        process_query_execution(ch, method, properties, body)
+
+def process_query_execution(ch, method, properties, body):
+    """Process query execution step"""
+    start_time = time.time()
+    
+    try:
+        # Parse message
+        data = json.loads(body)
+        message = message_from_dict(data, QueryGeneratedMessage)
+        
+        print(f"\n[SAGA STEP 2] Query Execution (Native) - Saga ID: {message.saga_id}")
+        
+        # Verify we have SQL
+        if not message.generated_sql or message.generated_sql.upper() == "NONE":
+             print(f"[SAGA STEP 2] ✗ No valid SQL to execute")
+             store_saga_error(
+                message=message,
+                error_step="execute_query_native",
+                error_msg="No valid SQL query was generated by the previous step.",
+                duration_ms=(time.time() - start_time) * 1000,
+                reasoning="Missing SQL"
+            )
+             ch.basic_ack(delivery_tag=method.delivery_tag)
+             return
+
+        # Execute native SQL
+        success, raw_results, reasoning = execute_query_native(message.db_config, message.generated_sql)
+        
+        duration_ms = (time.time() - start_time) * 1000
+        
+        if not success:
+            print(f"[SAGA STEP 2] ✗ Native execution failed: {raw_results[:100]}...")
+            
+            # Record error metrics
+            SAGA_CONSUMER_MESSAGES.labels(consumer='query_executor', status='error', instance=INSTANCE_ID).inc()
+            SAGA_CONSUMER_DURATION.labels(consumer='query_executor').observe(duration_ms / 1000)
+            
+            store_saga_error(
+                message=message,
+                error_step="execute_query_native",
+                error_msg=raw_results,
+                duration_ms=duration_ms,
+                reasoning=reasoning,
+                sql=message.generated_sql
+            )
+            
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
+        
+        print(f"[SAGA STEP 2] ✓ Query executed successfully in {duration_ms:.2f}ms")
+        
+        next_message = QueryExecutedMessage(
+            saga_id=message.saga_id,
+            user_id=message.user_id,
+            account_id=message.account_id,
+            question=message.question,
+            generated_sql=message.generated_sql,
+            raw_results=raw_results,
+            reasoning=reasoning,
+            execution_success=True,
+            execution_error=None
+        )
+        
+        next_message.call_stack = message.call_stack.copy()
+        next_message.all_tool_calls = message.all_tool_calls.copy()
+        next_message._current_tool_calls = message._current_tool_calls.copy()
+        message._current_tool_calls = []
+        
+        # Add to call stack - no interaction history for native execution
+        next_message.add_to_call_stack(
+            step_name="execute_query_native",
+            status="success",
+            duration_ms=duration_ms,
+            sql=message.generated_sql,
+            reasoning=reasoning,
+            response=raw_results,
+            tools_used=[]
+        )
+        
+        # Publish to next step
+        publisher = SagaPublisher()
+        publisher.publish_result_formatting(next_message)
+        
+        update_saga_state(message.saga_id, {
+            **next_message.to_dict(),
+            "reasoning": reasoning,
+            "execution_success": True,
+            "raw_results": raw_results
+        })
+        
+        # Record success metrics
+        SAGA_CONSUMER_MESSAGES.labels(consumer='query_executor', status='success', instance=INSTANCE_ID).inc()
+        SAGA_CONSUMER_DURATION.labels(consumer='query_executor').observe(duration_ms / 1000)
+        
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+        
+    except Exception as e:
+        duration_ms = (time.time() - start_time) * 1000
+        print(f"[SAGA STEP 2] ✗ Error: {str(e)}")
+        
+        # Record error metrics
+        SAGA_CONSUMER_MESSAGES.labels(consumer='query_executor', status='error', instance=INSTANCE_ID).inc()
+        SAGA_CONSUMER_DURATION.labels(consumer='query_executor').observe(duration_ms / 1000)
+        
+        store_saga_error(
+            message=message,
+            error_step="execute_query_native",
+            error_msg=str(e),
+            duration_ms=duration_ms
+        )
+        
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+
+
+def start_query_executor_consumer(host: str = None):
+    consumer = QueryExecutorConsumer(host=host)
+    consumer.start_consuming()

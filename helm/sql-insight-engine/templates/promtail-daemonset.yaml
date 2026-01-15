@@ -1,0 +1,139 @@
+{{- if .Values.promtail.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-promtail-config
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+data:
+  promtail-config.yaml: |
+    server:
+      http_listen_port: 9080
+      grpc_listen_port: 0
+
+    positions:
+      filename: /tmp/positions.yaml
+
+    clients:
+      - url: http://{{ include "sql-insight-engine.fullname" . }}-loki:3100/loki/api/v1/push
+
+    scrape_configs:
+      # Scrape Kubernetes pod logs
+      - job_name: kubernetes-pods
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - {{ .Release.Namespace }}
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_instance]
+            action: keep
+            regex: {{ .Release.Name }}
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: __host__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - action: replace
+            replacement: $1
+            separator: /
+            source_labels:
+              - __meta_kubernetes_namespace
+              - __meta_kubernetes_pod_name
+            target_label: job
+          - action: replace
+            source_labels:
+              - __meta_kubernetes_namespace
+            target_label: namespace
+          - action: replace
+            source_labels:
+              - __meta_kubernetes_pod_name
+            target_label: pod
+          - action: replace
+            source_labels:
+              - __meta_kubernetes_pod_container_name
+            target_label: container
+          - replacement: /var/log/pods/*$1/*.log
+            separator: /
+            source_labels:
+              - __meta_kubernetes_pod_uid
+              - __meta_kubernetes_pod_container_name
+            target_label: __path__
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-promtail
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: promtail
+spec:
+  selector:
+    matchLabels:
+      {{- include "sql-insight-engine.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: promtail
+  template:
+    metadata:
+      labels:
+        {{- include "sql-insight-engine.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: promtail
+    spec:
+      serviceAccountName: {{ include "sql-insight-engine.fullname" . }}-promtail
+      containers:
+      - name: promtail
+        image: "{{ .Values.promtail.image.repository }}:{{ .Values.promtail.image.tag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        args:
+          - -config.file=/etc/promtail/promtail-config.yaml
+        volumeMounts:
+        - name: config
+          mountPath: /etc/promtail
+        - name: varlog
+          mountPath: /var/log
+        - name: varlibdockercontainers
+          mountPath: /var/lib/docker/containers
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "sql-insight-engine.fullname" . }}-promtail-config
+      - name: varlog
+        hostPath:
+          path: /var/log
+      - name: varlibdockercontainers
+        hostPath:
+          path: /var/lib/docker/containers
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-promtail
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-promtail
+rules:
+- apiGroups: [""]
+  resources:
+  - nodes
+  - nodes/proxy
+  - services
+  - endpoints
+  - pods
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-promtail
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "sql-insight-engine.fullname" . }}-promtail
+subjects:
+- kind: ServiceAccount
+  name: {{ include "sql-insight-engine.fullname" . }}-promtail
+  namespace: {{ .Release.Namespace }}
+{{- end }}

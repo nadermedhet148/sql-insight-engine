@@ -1,0 +1,42 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Use DNS service discovery to scrape all replicas in Docker Swarm
+  # 'tasks.service-name' resolves to all container IPs for that service
+  - job_name: 'api'
+    dns_sd_configs:
+      - names:
+          - 'tasks.api'
+        type: 'A'
+        port: 8000
+    metrics_path: /metrics
+
+  - job_name: 'mcp-registry'
+    dns_sd_configs:
+      - names:
+          - 'tasks.mcp-registry'
+        type: 'A'
+        port: 8010
+    metrics_path: /metrics
+
+  - job_name: 'mcp-postgres'
+    dns_sd_configs:
+      - names:
+          - 'tasks.mcp-postgres'
+        type: 'A'
+        port: 8001
+    metrics_path: /metrics
+
+  - job_name: 'mcp-chroma'
+    dns_sd_configs:
+      - names:
+          - 'tasks.mcp-chroma'
+        type: 'A'
+        port: 8002
+    metrics_path: /metrics

@@ -1,0 +1,229 @@
+{{- if .Values.mcpPostgres.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-mcp-postgres
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-postgres
+spec:
+  replicas: {{ .Values.mcpPostgres.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "sql-insight-engine.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mcp-postgres
+  template:
+    metadata:
+      labels:
+        {{- include "sql-insight-engine.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mcp-postgres
+    spec:
+      containers:
+      - name: mcp-postgres
+        image: "{{ .Values.mcpPostgres.image.repository }}:{{ .Values.mcpPostgres.image.tag }}"
+        imagePullPolicy: {{ .Values.mcpPostgres.image.pullPolicy | default .Values.global.imagePullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.mcpPostgres.service.port }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        env:
+
+        - name: MCP_DB_URL
+          value: "postgresql://{{ .Values.externalTestDb.env.user }}:{{ .Values.externalTestDb.env.password }}@{{ include "sql-insight-engine.fullname" . }}-external-test-db:{{ .Values.externalTestDb.service.port }}/{{ .Values.externalTestDb.env.database }}"
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sql-insight-engine.fullname" . }}-secrets
+              key: gemini-api-key
+        resources:
+          {{- toYaml .Values.mcpPostgres.resources | nindent 10 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-mcp-postgres
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-postgres
+spec:
+  type: ClusterIP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10
+  ports:
+  - port: {{ .Values.mcpPostgres.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    {{- include "sql-insight-engine.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-postgres
+{{- end }}
+---
+{{- if .Values.mcpChroma.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-mcp-chroma
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-chroma
+spec:
+  replicas: {{ .Values.mcpChroma.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "sql-insight-engine.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mcp-chroma
+  template:
+    metadata:
+      labels:
+        {{- include "sql-insight-engine.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mcp-chroma
+    spec:
+      containers:
+      - name: mcp-chroma
+        image: "{{ .Values.mcpChroma.image.repository }}:{{ .Values.mcpChroma.image.tag }}"
+        imagePullPolicy: {{ .Values.mcpChroma.image.pullPolicy | default .Values.global.imagePullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.mcpChroma.service.port }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        env:
+
+        - name: CHROMA_HOST
+          value: "{{ include "sql-insight-engine.fullname" . }}-chromadb"
+        - name: GEMINI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "sql-insight-engine.fullname" . }}-secrets
+              key: gemini-api-key
+        resources:
+          {{- toYaml .Values.mcpChroma.resources | nindent 10 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-mcp-chroma
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-chroma
+spec:
+  type: ClusterIP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10
+  ports:
+  - port: {{ .Values.mcpChroma.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    {{- include "sql-insight-engine.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-chroma
+{{- end }}
+---
+{{- if .Values.mcpRegistry.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-mcp-registry
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-registry
+spec:
+  replicas: {{ .Values.mcpRegistry.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "sql-insight-engine.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mcp-registry
+  template:
+    metadata:
+      labels:
+        {{- include "sql-insight-engine.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mcp-registry
+    spec:
+      containers:
+      - name: mcp-registry
+        image: "{{ .Values.mcpRegistry.image.repository }}:{{ .Values.mcpRegistry.image.tag }}"
+        imagePullPolicy: {{ .Values.mcpRegistry.image.pullPolicy | default .Values.global.imagePullPolicy }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.mcpRegistry.service.port }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        env:
+        - name: REDIS_HOST
+          value: "{{ include "sql-insight-engine.fullname" . }}-redis"
+        - name: MCP_SERVICES
+          value: '[{"name": "mcp-postgres", "url": "http://{{ include "sql-insight-engine.fullname" . }}-mcp-postgres:{{ .Values.mcpPostgres.service.port }}/sse"}, {"name": "mcp-chroma", "url": "http://{{ include "sql-insight-engine.fullname" . }}-mcp-chroma:{{ .Values.mcpChroma.service.port }}/sse"}]'
+        resources:
+          {{- toYaml .Values.mcpRegistry.resources | nindent 10 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-mcp-registry
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-registry
+spec:
+  type: ClusterIP
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10
+  ports:
+  - port: {{ .Values.mcpRegistry.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    {{- include "sql-insight-engine.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mcp-registry
+{{- end }}

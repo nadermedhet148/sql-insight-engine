@@ -1,6 +1,17 @@
 version: '3.8'
 
 services:
+  mcp-registry:
+    build:
+      context: ./apps/mcp-registry
+    container_name: mcp-registry
+    ports:
+      - "8010:8010"
+    networks:
+      - insight_network
+    environment:
+      - REDIS_HOST=redis
+
   metadata_store:
     image: postgres:15
     container_name: metadata_store
@@ -8,6 +19,7 @@ services:
       POSTGRES_USER: ${METADATA_DB_USER}
       POSTGRES_PASSWORD: ${METADATA_DB_PASSWORD}
       POSTGRES_DB: ${METADATA_DB_NAME}
+      PYTHONUNBUFFERED: "1"
     ports:
       - "5432:5432"
     volumes:
@@ -22,6 +34,7 @@ services:
       POSTGRES_USER: ${TEST_DB_USER}
       POSTGRES_PASSWORD: ${TEST_DB_PASSWORD}
       POSTGRES_DB: ${TEST_DB_NAME}
+      PYTHONUNBUFFERED: "1"
     ports:
       - "5433:5432"
     volumes:
@@ -54,17 +67,45 @@ services:
     networks:
       - insight_network
 
+  mcp-postgres:
+    build:
+      context: ./packages/mcp-postgres
+    container_name: mcp-postgres
+    ports:
+      - "8011:8001"
+    env_file:
+      - .env
+    networks:
+      - insight_network
+
+  mcp-chroma:
+    build:
+      context: ./packages/mcp-chroma
+    container_name: mcp-chroma
+    ports:
+      - "8012:8002"
+    env_file:
+      - .env
+    environment:
+      - CHROMA_HOST=chromadb
+    depends_on:
+      - chromadb
+    networks:
+      - insight_network
+
   api:
     build:
-      context: .
+      context: ./apps/sql-insight-engine
       dockerfile: Dockerfile
     container_name: api
     volumes:
-      - ./src:/app/src
+      - ./apps/sql-insight-engine/src:/app/src
     ports:
       - "8001:8000"
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - DATABASE_URL=postgresql://${METADATA_DB_USER:-admin}:${METADATA_DB_PASSWORD:-password}@metadata_store:5432/${METADATA_DB_NAME:-insight_engine}
       - DATABASE_M_URL=postgresql://${METADATA_DB_USER:-admin}:${METADATA_DB_PASSWORD:-password}@metadata_store:5432/${METADATA_DB_NAME:-insight_engine}
@@ -72,12 +113,21 @@ services:
       - RABBITMQ_HOST=rabbitmq
       - CHROMA_HOST=chromadb
       - MINIO_HOST=minio
+      - POSTGRES_MCP_URL=http://mcp-postgres:8001/sse
+      - CHROMA_MCP_URL=http://mcp-chroma:8002/sse
+      - DB_URL=${EXTERNAL_TEST_DB_URL}
+      - MCP_REGISTRY_URL=http://mcp-registry:8010
+      - MCP_SERVER_URL=http://mcp-postgres:8001/sse
+      - PYTHONUNBUFFERED=1
     depends_on:
       - metadata_store
       - chromadb
       - minio
       - rabbitmq
       - redis
+      - mcp-postgres
+      - mcp-chroma
+      - mcp-registry
     networks:
       - insight_network
 
@@ -101,11 +151,72 @@ services:
     networks:
       - insight_network
 
+  # Observability Stack
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - insight_network
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - insight_network
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: promtail
+    volumes:
+      - ./monitoring/promtail-config.yml:/etc/promtail/config.yml
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - insight_network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "4000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - insight_network
+
 volumes:
   metadata_data:
   external_test_data:
   chroma_data:
   minio_data:
+  prometheus_data:
+  loki_data:
+  grafana_data:
 
 
 networks:

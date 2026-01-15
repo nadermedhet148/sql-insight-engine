@@ -1,0 +1,137 @@
+{{- if .Values.loki.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-loki-config
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+data:
+  loki-config.yaml: |
+    auth_enabled: false
+
+    server:
+      http_listen_port: 3100
+
+    ingester:
+      lifecycler:
+        address: 127.0.0.1
+        ring:
+          kvstore:
+            store: inmemory
+          replication_factor: 1
+        final_sleep: 0s
+      chunk_idle_period: 5m
+      chunk_retain_period: 30s
+      wal:
+        dir: /loki/wal
+
+    schema_config:
+      configs:
+        - from: 2020-10-24
+          store: boltdb-shipper
+          object_store: filesystem
+          schema: v11
+          index:
+            prefix: index_
+            period: 24h
+
+    storage_config:
+      boltdb_shipper:
+        active_index_directory: /loki/index
+        cache_location: /loki/cache
+        shared_store: filesystem
+      filesystem:
+        directory: /loki/chunks
+
+    limits_config:
+      enforce_metric_name: false
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+
+    compactor:
+      working_directory: /loki/compactor
+      shared_store: filesystem
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-loki
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: loki
+spec:
+  serviceName: {{ include "sql-insight-engine.fullname" . }}-loki
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "sql-insight-engine.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: loki
+  template:
+    metadata:
+      labels:
+        {{- include "sql-insight-engine.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: loki
+    spec:
+      containers:
+      - name: loki
+        image: "{{ .Values.loki.image.repository }}:{{ .Values.loki.image.tag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        args:
+          - -config.file=/etc/loki/loki-config.yaml
+        ports:
+        - name: http
+          containerPort: {{ .Values.loki.service.port }}
+        volumeMounts:
+        - name: config
+          mountPath: /etc/loki
+        - name: data
+          mountPath: /loki
+        livenessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 45
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "sql-insight-engine.fullname" . }}-loki-config
+  {{- if .Values.loki.persistence.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: {{ .Values.global.storageClass }}
+      resources:
+        requests:
+          storage: {{ .Values.loki.persistence.size }}
+  {{- else }}
+      - name: data
+        emptyDir: {}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-loki
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: loki
+spec:
+  type: ClusterIP
+  ports:
+  - port: {{ .Values.loki.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    {{- include "sql-insight-engine.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: loki
+{{- end }}

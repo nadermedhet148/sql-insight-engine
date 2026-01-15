@@ -1,0 +1,90 @@
+{{- if .Values.externalTestDb.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-external-test-db
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: external-test-db
+spec:
+  serviceName: {{ include "sql-insight-engine.fullname" . }}-external-test-db
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "sql-insight-engine.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: external-test-db
+  template:
+    metadata:
+      labels:
+        {{- include "sql-insight-engine.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: external-test-db
+    spec:
+      containers:
+      - name: postgresql
+        image: "{{ .Values.externalTestDb.image.repository }}:{{ .Values.externalTestDb.image.tag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - name: postgresql
+          containerPort: {{ .Values.externalTestDb.service.port }}
+        env:
+        - name: POSTGRES_DB
+          value: {{ .Values.externalTestDb.env.database }}
+        - name: POSTGRES_USER
+          value: {{ .Values.externalTestDb.env.user }}
+        - name: POSTGRES_PASSWORD
+          value: {{ .Values.externalTestDb.env.password }}
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - {{ .Values.externalTestDb.env.user }}
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - {{ .Values.externalTestDb.env.user }}
+          initialDelaySeconds: 5
+          periodSeconds: 5
+  {{- if .Values.externalTestDb.persistence.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: {{ .Values.global.storageClass }}
+      resources:
+        requests:
+          storage: {{ .Values.externalTestDb.persistence.size }}
+  {{- else }}
+      volumes:
+      - name: data
+        emptyDir: {}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-external-test-db
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: external-test-db
+spec:
+  type: ClusterIP
+  ports:
+  - port: {{ .Values.externalTestDb.service.port }}
+    targetPort: postgresql
+    protocol: TCP
+    name: postgresql
+  selector:
+    {{- include "sql-insight-engine.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: external-test-db
+{{- end }}

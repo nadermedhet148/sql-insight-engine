@@ -1,0 +1,212 @@
+{{- if .Values.prometheus.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-prometheus-config
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+
+      # Kubernetes service discovery for API
+      - job_name: 'api'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - {{ .Release.Namespace }}
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: {{ include "sql-insight-engine.fullname" . }}-api
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: http
+        metrics_path: /metrics
+
+      # MCP Registry
+      - job_name: 'mcp-registry'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - {{ .Release.Namespace }}
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: {{ include "sql-insight-engine.fullname" . }}-mcp-registry
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: http
+        metrics_path: /metrics
+
+      # MCP Postgres
+      - job_name: 'mcp-postgres'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - {{ .Release.Namespace }}
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: {{ include "sql-insight-engine.fullname" . }}-mcp-postgres
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: http
+        metrics_path: /metrics
+
+      # MCP Chroma
+      - job_name: 'mcp-chroma'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - {{ .Release.Namespace }}
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_service_name]
+            action: keep
+            regex: {{ include "sql-insight-engine.fullname" . }}-mcp-chroma
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: http
+        metrics_path: /metrics
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-prometheus
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-prometheus
+rules:
+- apiGroups: [""]
+  resources:
+  - nodes
+  - nodes/proxy
+  - services
+  - endpoints
+  - pods
+  verbs: ["get", "list", "watch"]
+- apiGroups:
+  - extensions
+  resources:
+  - ingresses
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "sql-insight-engine.fullname" . }}-prometheus
+subjects:
+- kind: ServiceAccount
+  name: {{ include "sql-insight-engine.fullname" . }}-prometheus
+  namespace: {{ .Release.Namespace }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-prometheus
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: prometheus
+spec:
+  serviceName: {{ include "sql-insight-engine.fullname" . }}-prometheus
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "sql-insight-engine.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: prometheus
+  template:
+    metadata:
+      labels:
+        {{- include "sql-insight-engine.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: prometheus
+    spec:
+      serviceAccountName: {{ include "sql-insight-engine.fullname" . }}-prometheus
+      containers:
+      - name: prometheus
+        image: "{{ .Values.prometheus.image.repository }}:{{ .Values.prometheus.image.tag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        args:
+          - '--config.file=/etc/prometheus/prometheus.yml'
+          - '--storage.tsdb.path=/prometheus'
+          - '--web.console.libraries=/etc/prometheus/console_libraries'
+          - '--web.console.templates=/etc/prometheus/consoles'
+          - '--storage.tsdb.retention.time=15d'
+        ports:
+        - name: http
+          containerPort: {{ .Values.prometheus.service.port }}
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus
+        - name: data
+          mountPath: /prometheus
+        livenessProbe:
+          httpGet:
+            path: /-/healthy
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: config
+        configMap:
+          name: {{ include "sql-insight-engine.fullname" . }}-prometheus-config
+  {{- if .Values.prometheus.persistence.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: {{ .Values.global.storageClass }}
+      resources:
+        requests:
+          storage: {{ .Values.prometheus.persistence.size }}
+  {{- else }}
+      - name: data
+        emptyDir: {}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-prometheus
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: prometheus
+spec:
+  type: {{ .Values.prometheus.service.type }}
+  ports:
+  - port: {{ .Values.prometheus.service.port }}
+    targetPort: http
+    protocol: TCP
+    name: http
+    {{- if eq .Values.prometheus.service.type "NodePort" }}
+    nodePort: {{ .Values.prometheus.service.nodePort }}
+    {{- end }}
+  selector:
+    {{- include "sql-insight-engine.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: prometheus
+{{- end }}

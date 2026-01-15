@@ -1,0 +1,13 @@
+apiVersion: v2
+name: sql-insight-engine
+description: A Natural Language to SQL Query Engine with MCP Architecture
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - sql
+  - nlp
+  - mcp
+  - gemini
+maintainers:
+  - name: SQL Insight Team

@@ -1,0 +1,18 @@
+[project]
+name = "mcp-postgres"
+version = "0.1.0"
+description = "MCP Server for PostgreSQL"
+dependencies = [
+    "mcp[server]",
+    "sqlalchemy",
+    "psycopg2-binary",
+    "python-dotenv",
+    "uvicorn",
+    "fastapi",
+    "httpx",
+    "prometheus-client"
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
