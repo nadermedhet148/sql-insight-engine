@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
       - name: mcp-database
-        image: "{{ .Values.mcpDatabase.image.repository }}:{{ .Values.mcpDatabase.image.tag }}"
+        image: "{{ .Values.mcpDatabase.image.repository }}:{{ .Values.mcpDatabase.image.tag | int64 }}"
         command: ["sh", "-c", "python -m mcp_database.server"]
         imagePullPolicy: {{ .Values.mcpDatabase.image.pullPolicy | default .Values.global.imagePullPolicy }}
         ports:
@@ -69,10 +69,7 @@ metadata:
     app.kubernetes.io/component: mcp-database
 spec:
   type: ClusterIP
-  sessionAffinity: ClientIP
-  sessionAffinityConfig:
-    clientIP:
-      timeoutSeconds: 10
+  clusterIP: "None"
   ports:
   - port: {{ .Values.mcpDatabase.service.port }}
     targetPort: http
@@ -105,7 +102,8 @@ spec:
     spec:
       containers:
       - name: mcp-chroma
-        image: "{{ .Values.mcpChroma.image.repository }}:{{ .Values.mcpChroma.image.tag }}"
+        image: "{{ .Values.mcpChroma.image.repository }}:{{ .Values.mcpChroma.image.tag | int64 }}"
+        command: ["sh", "-c", "python -m uvicorn mcp_chroma.server:app --host 0.0.0.0 --port {{ .Values.mcpChroma.service.port }} --workers 1"]
         imagePullPolicy: {{ .Values.mcpChroma.image.pullPolicy | default .Values.global.imagePullPolicy }}
         ports:
         - name: http
@@ -127,14 +125,20 @@ spec:
           timeoutSeconds: 5
           failureThreshold: 3
         env:
+          {{- if .Values.mcpChroma.env }}
+          {{- range $key, $value := .Values.mcpChroma.env }}
+          - name: {{ $key }}
+            value: {{ $value | quote }}
+          {{- end }}
+          {{- end }}
 
-        - name: CHROMA_HOST
-          value: "{{ include "sql-insight-engine.fullname" . }}-chromadb"
-        - name: GEMINI_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: {{ include "sql-insight-engine.fullname" . }}-secrets
-              key: gemini-api-key
+          - name: CHROMA_HOST
+            value: "{{ include "sql-insight-engine.fullname" . }}-chromadb"
+          - name: GEMINI_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: {{ include "sql-insight-engine.fullname" . }}-secrets
+                key: gemini-api-key
         resources:
           {{- toYaml .Values.mcpChroma.resources | nindent 10 }}
 ---
@@ -147,10 +151,7 @@ metadata:
     app.kubernetes.io/component: mcp-chroma
 spec:
   type: ClusterIP
-  sessionAffinity: ClientIP
-  sessionAffinityConfig:
-    clientIP:
-      timeoutSeconds: 10
+  clusterIP: "None"
   ports:
   - port: {{ .Values.mcpChroma.service.port }}
     targetPort: http
@@ -183,7 +184,7 @@ spec:
     spec:
       containers:
       - name: mcp-registry
-        image: "{{ .Values.mcpRegistry.image.repository }}:{{ .Values.mcpRegistry.image.tag }}"
+        image: "{{ .Values.mcpRegistry.image.repository }}:{{ .Values.mcpRegistry.image.tag | int64 }}"
         imagePullPolicy: {{ .Values.mcpRegistry.image.pullPolicy | default .Values.global.imagePullPolicy }}
         ports:
         - name: http
@@ -221,10 +222,7 @@ metadata:
     app.kubernetes.io/component: mcp-registry
 spec:
   type: ClusterIP
-  sessionAffinity: ClientIP
-  sessionAffinityConfig:
-    clientIP:
-      timeoutSeconds: 10
+  clusterIP: "None"
   ports:
   - port: {{ .Values.mcpRegistry.service.port }}
     targetPort: http

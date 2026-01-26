@@ -12,10 +12,10 @@ global:
 # API Service
 api:
   enabled: false
-  replicaCount: 6
+  replicaCount: 3
   image:
     repository: sql-insight-engine-api
-    tag: "1768497562" # Fixed tag
+    tag: "1769293517" # Fixed tag
     pullPolicy: Never # Override for local image
   service:
     type: NodePort
@@ -37,7 +37,7 @@ mcpDatabase:
   replicaCount: 6
   image:
     repository: sql-insight-engine-mcp-database
-    tag: "1768497562" # Fixed tag
+    tag: "1769293517" # Fixed tag
     pullPolicy: Never # Override for local image
   service:
     port: 8001
@@ -56,19 +56,19 @@ mcpDatabase:
 
 mcpChroma:
   enabled: false
-  replicaCount: 8
+  replicaCount: 2
   image:
     repository: sql-insight-engine-mcp-chroma
-    tag: "1768497562"
+    tag: "1769293517"
     pullPolicy: Never # Override for local image
   service:
     port: 8002
   resources:
     requests:
-      memory: "256Mi"
+      memory: "1Gi"
       cpu: "150m"
     limits:
-      memory: "512Mi"
+      memory: "2Gi"
       cpu: "300m"
 
 mcpRegistry:
@@ -76,7 +76,7 @@ mcpRegistry:
   replicaCount: 2
   image:
     repository: sql-insight-engine-mcp-registry
-    tag: "1768497562"
+    tag: "1769293517"
     pullPolicy: Never # Override for local image
   service:
     port: 8010
@@ -94,7 +94,7 @@ ui:
   enabled: false
   image:
     repository: sql-insight-engine-ui
-    tag: "1768497562"
+    tag: "1769293517"
     pullPolicy: Never
   service:
     type: ClusterIP
@@ -277,13 +277,3 @@ secrets:
 # ConfigMaps
 configMaps:
   enabled: true
-
-ui:
-  enabled: false
-  image:
-    repository: sql-insight-engine-ui
-    tag: latest
-    pullPolicy: Never
-  service:
-    type: ClusterIP
-    port: 80
