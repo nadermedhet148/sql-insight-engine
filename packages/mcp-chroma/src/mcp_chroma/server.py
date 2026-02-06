@@ -88,7 +88,7 @@ class ChromaMCPServer:
             api_key = os.getenv("GEMINI_API_KEY")
             client = genai.Client(api_key=api_key)
             result = client.models.embed_content(
-                model="text-embedding-004",
+                model="gemini-embedding-001",
                 contents=text,
                 config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY")
             )

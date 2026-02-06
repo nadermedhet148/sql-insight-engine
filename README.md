@@ -129,18 +129,21 @@ graph LR
 
 ## 🚀 Getting Started
 
-### Requirements
+### Prerequisites
 
 - Docker & Docker Compose
+- Kubernetes cluster (Minikube or Rancher Desktop with k3s)
+- Helm 3
+- kubectl
 - Python 3.11+ (for local development)
-- Google Gemini API Key
+- Google Gemini API Key ([get one here](https://aistudio.google.com/apikey))
 
 ### Environment Variables
 
 Create a `.env` file in the project root:
 
 ```bash
-# Gemini
+# Gemini (required)
 GEMINI_API_KEY=your_api_key
 
 # Metadata Database
@@ -149,8 +152,8 @@ METADATA_DB_PASSWORD=password
 METADATA_DB_NAME=insight_engine
 
 # Test Database
-TEST_DB_USER=test_user
-TEST_DB_PASSWORD=test_password
+TEST_DB_USER=admin
+TEST_DB_PASSWORD=password
 TEST_DB_NAME=external_test_db
 
 # RabbitMQ
@@ -159,59 +162,102 @@ RABBITMQ_PASSWORD=guest
 
 # MinIO
 MINIO_ROOT_USER=minioadmin
-MINIO_ROOT_PASSWORD=minioadmin
+MINIO_ROOT_PASSWORD=minioadmin123
 ```
 
 ---
 
 ## 🏃 How to Run
 
-### Option 1: Docker Compose (Development)
+The project uses Helm to deploy on Kubernetes. There are deployment scripts for different environments and stages.
 
-The easiest way to run the entire stack:
+### Deployment Scripts
+
+| Script | What it does |
+| --- | --- |
+| `run-minikube.sh` | **Full deploy from scratch** on Minikube (builds images, pulls infra, deploys everything) |
+| `run-k8s.sh` | **Full deploy from scratch** on Rancher Desktop / k3s |
+| `run-infra.sh` | Deploy **infrastructure only** (PostgreSQL, Redis, RabbitMQ, ChromaDB, MinIO) |
+| `run-apps.sh` | Rebuild and deploy **application services only** (API, MCP services, UI) — no infra restart |
+| `run-observability.sh` | Deploy **observability stack** (Prometheus, Grafana, Loki, Promtail) |
+| `restart-minikube.sh` | Restart Minikube and wait for existing pods — no rebuild |
+
+### Option 1: Full Deployment (Minikube)
+
+First-time setup that builds everything and deploys the entire stack:
 
 ```bash
-# Start all services
-docker compose up --build
+# 1. Make sure your .env file is configured (see above)
 
-# Or start in detached mode
-docker compose up -d --build
-```
+# 2. Start minikube if not running
+minikube start --driver=docker
 
-### Option 2: Docker Swarm (Production/Scaling)
-
-For running with replicas and load balancing:
-
-```bash
-# Run the deployment script
-./run.sh
+# 3. Run the full deployment
+./run-minikube.sh
 ```
 
 This will:
+1. Start Minikube if not already running
+2. Build all Docker images inside Minikube's Docker daemon
+3. Pull infrastructure images (PostgreSQL, Redis, RabbitMQ, ChromaDB, MinIO)
+4. Deploy everything via Helm
+5. Wait for all pods to be ready
 
-1. Initialize Docker Swarm if not already active
-2. Build all images
-3. Deploy the stack with Traefik load balancer
-4. Create replicas: 3x mcp-database, 3x mcp-chroma, 2x mcp-registry
-
-### Useful Commands
+### Option 2: Full Deployment (Rancher Desktop / k3s)
 
 ```bash
-# Rebuild and restart API only
-./rebuild_api.sh
-
-# Check service status (Swarm)
-docker service ls
-
-# View API logs
-docker logs -f api
-
-# Check MCP registry
-curl http://localhost:8010/servers
-
-# Setup test data
-python apps/sql-insight-engine/scripts/setup_test_data.py
+./run-k8s.sh
 ```
+
+Same as above but uses k3s containerd for image import instead of minikube.
+
+### Option 3: Staged Deployment
+
+Deploy infrastructure and applications separately. Useful when you only want to redeploy app code without restarting databases:
+
+```bash
+# Step 1: Deploy infrastructure (databases, queues, storage)
+./run-infra.sh
+
+# Step 2: Deploy application services (API, MCP servers, UI)
+./run-apps.sh
+
+# Step 3 (optional): Deploy observability (Prometheus, Grafana)
+./run-observability.sh
+```
+
+### Option 4: Docker Compose (Local Development)
+
+Run the entire stack locally without Kubernetes:
+
+```bash
+docker compose up --build
+```
+
+### Post-Deployment Setup
+
+After the first deployment, seed the test database:
+
+```bash
+# From inside the API pod
+kubectl exec -it deploy/sql-insight-engine-api -n sql-insight-engine -c api -- \
+    python scripts/setup_test_data.py
+```
+
+This creates a test user, configures the database connection, and seeds:
+- 100 users
+- 1,000 products
+- 10,000 orders
+
+### Redeploy After Code Changes
+
+If you modify application code (Python files), use `run-apps.sh` to rebuild and redeploy only the application services without touching infrastructure:
+
+```bash
+./run-apps.sh
+```
+
+This rebuilds Docker images, imports them into the cluster, runs `helm upgrade`, and restarts the app deployments.
 
 ---
 
@@ -221,11 +267,11 @@ python apps/sql-insight-engine/scripts/setup_test_data.py
 
 When configuring a user's database connection:
 
-| Context              | Host                   | Port   |
-| -------------------- | ---------------------- | ------ |
-| From inside Docker   | `external_test_db`     | `5432` |
-| From host machine    | `localhost`            | `5433` |
-| From Docker via host | `host.docker.internal` | `5433` |
+| Context              | Host                                      | Port   |
+| -------------------- | ----------------------------------------- | ------ |
+| From inside Docker   | `external_test_db`                        | `5432` |
+| From inside K8s      | `sql-insight-engine-external-test-db`     | `5432` |
+| From host machine    | `localhost`                               | `5433` |
 
 ### Database Migrations
 
@@ -247,26 +293,12 @@ alembic history --verbose
 
 ---
 
-## 🧪 Testing
+## 🧪 Using the System
 
-### Setup Test Database
-
-```bash
-source venv/bin/activate
-python apps/sql-insight-engine/scripts/setup_test_data.py
-```
-
-This creates:
-
-- 100 users
-- 1,000 products
-- 10,000 orders
-
-### Query the System
-
-1. Open the UI: `python apps/sql-insight-engine/serve_ui.py`
-2. Create a user and configure database connection
-3. Ask questions like: "What are my top 5 customers by total order amount?"
+1. Port-forward the UI and API (see below)
+2. Open the UI at `http://localhost:8080`
+3. Create a user and configure database connection
+4. Ask questions like: *"What are my top 5 customers by total order amount?"*
 
 ---
 
@@ -277,23 +309,30 @@ This creates:
 If you modify `values.yaml` (e.g., scaling replicas), apply changes without rebuilding images:
 
 ```bash
-helm upgrade --install sql-insight-engine ./helm/sql-insight-engine \
+helm upgrade sql-insight-engine ./helm/sql-insight-engine \
     --namespace sql-insight-engine \
     --reuse-values
 ```
 
-### Apply Code Changes
-
-If you modify application code (e.g., Python files), you must rebuild the image, import it into the cluster, and restart the deployment:
+### Restart App Services (No Rebuild)
 
 ```bash
-# Rebuild and Deploy API
-docker compose build api && \
-docker save sql-insight-engine-api:latest | sudo k3s ctr images import - && \
-kubectl rollout restart deployment sql-insight-engine-api -n sql-insight-engine
+kubectl rollout restart deployment/sql-insight-engine-api \
+    deployment/sql-insight-engine-mcp-database \
+    deployment/sql-insight-engine-mcp-chroma \
+    deployment/sql-insight-engine-mcp-registry \
+    -n sql-insight-engine
 ```
 
-## Helpful Commands
+### Delete Everything
+
+```bash
+helm uninstall sql-insight-engine -n sql-insight-engine
+```
+
+---
+
+## 📋 Helpful Commands
 
 ### Check Logs
 
@@ -311,27 +350,30 @@ kubectl logs -n sql-insight-engine -l app.kubernetes.io/component=mcp-chroma --t
 kubectl logs -n sql-insight-engine -l app.kubernetes.io/component=mcp-registry --tail=100 -f
 ```
 
+### Check Pod Status
+
+```bash
+kubectl get pods -n sql-insight-engine
+```
+
 ### Port Forwarding
 
 ```bash
-# Main API (http://localhost:8000)
-kubectl port-forward svc/sql-insight-engine-api 8000:8000 -n sql-insight-engine
-
-# Main API Load Test Port (http://localhost:8005)
-kubectl port-forward svc/sql-insight-engine-api 8005:8000 -n sql-insight-engine
-
 # UI (http://localhost:8080)
-kubectl port-forward svc/sql-insight-engine-ui 8080:80 -n sql-insight-engine
+kubectl port-forward svc/sql-insight-engine-ui 8080:80 -n sql-insight-engine &
 
-# RabbitMQ Dashboard (http://localhost:15672) - guest/guest
-kubectl port-forward svc/sql-insight-engine-rabbitmq 15672:15672 -n sql-insight-engine
-
-# Grafana (http://localhost:3000) - admin/admin
-kubectl port-forward svc/sql-insight-engine-grafana 3000:3000 -n sql-insight-engine
-
-# Prometheus (http://localhost:9090)
-kubectl port-forward svc/sql-insight-engine-prometheus 9090:9090 -n sql-insight-engine
+# API (http://localhost:8000)
+kubectl port-forward svc/sql-insight-engine-api 8000:8000 -n sql-insight-engine &
 
 # MCP Registry (http://localhost:8010)
-kubectl port-forward svc/sql-insight-engine-mcp-registry 8010:8010 -n sql-insight-engine
+kubectl port-forward svc/sql-insight-engine-mcp-registry 8010:8010 -n sql-insight-engine &
+
+# RabbitMQ Dashboard (http://localhost:15672) - guest/guest
+kubectl port-forward svc/sql-insight-engine-rabbitmq 15672:15672 -n sql-insight-engine &
+
+# Grafana (http://localhost:3000) - admin/admin
+kubectl port-forward svc/sql-insight-engine-grafana 3000:3000 -n sql-insight-engine &
+
+# Prometheus (http://localhost:9090)
+kubectl port-forward svc/sql-insight-engine-prometheus 9090:9090 -n sql-insight-engine &
 ```

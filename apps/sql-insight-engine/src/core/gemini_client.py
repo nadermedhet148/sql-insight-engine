@@ -67,7 +67,7 @@ SQL: SELECT 1
 """)
 
 class GeminiClient:
-    def __init__(self, model_name="gemini-2.0-flash", embedding_model="text-embedding-004", tools=None):
+    def __init__(self, model_name="gemini-2.0-flash", embedding_model="gemini-embedding-001", tools=None):
         self.api_key = os.getenv("GEMINI_API_KEY")
         self.model_name = model_name
         self.embedding_model = embedding_model

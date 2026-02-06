@@ -9,7 +9,7 @@ load_dotenv()
 API_KEY = os.getenv("GEMINI_API_KEY")
 
 class GeminiClient:
-    def __init__(self, model_name="gemini-2.0-flash", embedding_model="text-embedding-004", tools=None):
+    def __init__(self, model_name="gemini-2.0-flash", embedding_model="gemini-embedding-001", tools=None):
         if not API_KEY:
             print("Warning: GEMINI_API_KEY not found in environment variables.")
             self.client = None
