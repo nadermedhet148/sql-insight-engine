@@ -47,22 +47,32 @@ REUSE_VALUES=""
 #     echo "Release does not exist, creating new installation..."
 # fi
 
-# 3. Deploy Applications via Helm
+# 3. Delete StatefulSets with --cascade=orphan to allow immutable field updates
+# StatefulSets have immutable fields (volumeClaimTemplates, selector, etc.)
+# that cannot be patched. Deleting with --cascade=orphan keeps pods running.
+echo "Deleting existing StatefulSets (cascade=orphan) to allow spec updates..."
+STATEFULSETS=$(kubectl get statefulsets -n $NAMESPACE -l "app.kubernetes.io/instance=sql-insight-engine" -o name 2>/dev/null || true)
+if [ -n "$STATEFULSETS" ]; then
+    echo "$STATEFULSETS" | xargs kubectl delete --cascade=orphan -n $NAMESPACE || true
+fi
+
+# 4. Deploy Applications via Helm
 echo "Deploying Applications..."
 helm upgrade --install sql-insight-engine ./helm/sql-insight-engine \
     $REUSE_VALUES \
     --set api.enabled=true \
-    --set api.replicaCount=6 \
+    --set api.replicaCount=1 \
     --set api.image.tag=$TAG \
     --set ui.enabled=true \
     --set ui.image.tag=$TAG \
     --set mcpDatabase.enabled=true \
-    --set mcpDatabase.replicaCount=6 \
+    --set mcpDatabase.replicaCount=1 \
     --set mcpDatabase.image.tag=$TAG \
     --set mcpChroma.enabled=true \
-    --set mcpChroma.replicaCount=6 \
+    --set mcpChroma.replicaCount=1 \
     --set mcpChroma.image.tag=$TAG \
     --set mcpRegistry.enabled=true \
+    --set mcpRegistry.replicaCount=1 \
     --set mcpRegistry.image.tag=$TAG \
     --set secrets.geminiApiKey="${GEMINI_API_KEY}" \
     --set api.env.MOCK_GEMINI="fasle" \

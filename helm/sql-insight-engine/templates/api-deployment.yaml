@@ -18,6 +18,22 @@ spec:
         {{- include "sql-insight-engine.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: api
     spec:
+      initContainers:
+      - name: wait-for-infra
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for PostgreSQL..."
+          until nc -z {{ include "sql-insight-engine.fullname" . }}-postgresql {{ .Values.postgresql.service.port }}; do sleep 2; done
+          echo "Waiting for External Test DB..."
+          until nc -z {{ include "sql-insight-engine.fullname" . }}-external-test-db {{ .Values.externalTestDb.service.port }}; do sleep 2; done
+          echo "Waiting for Redis..."
+          until nc -z {{ include "sql-insight-engine.fullname" . }}-redis {{ .Values.redis.service.port }}; do sleep 2; done
+          echo "Waiting for RabbitMQ..."
+          until nc -z {{ include "sql-insight-engine.fullname" . }}-rabbitmq {{ .Values.rabbitmq.service.port }}; do sleep 2; done
+          echo "All dependencies ready!"
       containers:
       - name: api
         image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
@@ -42,7 +58,7 @@ spec:
         - name: RABBITMQ_PASSWORD
           value: "{{ .Values.rabbitmq.env.password }}"
         - name: CHROMA_HOST
-          value: "{{ include "sql-insight-engine.fullname" . }}-chromadb"
+          value: "{{ include "sql-insight-engine.fullname" . }}-chromadb-coordinator"
         - name: MINIO_HOST
           value: "{{ include "sql-insight-engine.fullname" . }}-minio"
         - name: MINIO_ROOT_USER

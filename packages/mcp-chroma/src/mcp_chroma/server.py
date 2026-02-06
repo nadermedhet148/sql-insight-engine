@@ -25,13 +25,32 @@ REGISTRY_URL = os.getenv("MCP_REGISTRY_URL", "http://mcp-registry:8010")
 SERVER_URL = os.getenv("MCP_SERVER_URL", "http://mcp-chroma:8002/sse")
 INSTANCE_ID = os.getenv("HOSTNAME", socket.gethostname())
 
-# MCP Tool Metrics
-MCP_TOOL_CALLS = Counter(
+# MCP Tool Metrics - use REGISTRY to avoid duplicate registration
+from prometheus_client import REGISTRY
+
+def get_or_create_counter(name, description, labels):
+    """Get existing counter or create new one, avoiding duplicate registration errors."""
+    try:
+        return Counter(name, description, labels)
+    except ValueError:
+        # Already registered - retrieve it from the registry
+        return REGISTRY._names_to_collectors[name.removesuffix('_total')]
+
+def get_or_create_histogram(name, description, labels, buckets):
+    """Get existing histogram or create new one, avoiding duplicate registration errors."""
+    try:
+        return Histogram(name, description, labels, buckets=buckets)
+    except ValueError:
+        # Already registered - retrieve it from the registry
+        return REGISTRY._names_to_collectors[name]
+
+
+MCP_TOOL_CALLS = get_or_create_counter(
     'mcp_tool_calls_total',
     'Total MCP tool calls',
     ['tool_name', 'service', 'instance', 'status']
 )
-MCP_TOOL_DURATION = Histogram(
+MCP_TOOL_DURATION = get_or_create_histogram(
     'mcp_tool_duration_seconds',
     'MCP tool execution time',
     ['tool_name', 'service'],
@@ -213,9 +232,9 @@ class MessagesHandler:
 app.routes.append(Route("/sse", SSEHandler(), methods=["GET"]))
 app.routes.append(Route("/messages", MessagesHandler(), methods=["POST"]))
 
-# Prometheus metrics
-REQUEST_COUNT = Counter('mcp_chroma_requests_total', 'Total requests', ['method', 'endpoint'])
-REQUEST_LATENCY = Histogram('mcp_chroma_request_duration_seconds', 'Request latency', ['endpoint'])
+# Prometheus metrics - use safe helpers to avoid duplicate registration on worker reload
+REQUEST_COUNT = get_or_create_counter('mcp_chroma_requests_total', 'Total requests', ['method', 'endpoint'])
+REQUEST_LATENCY = get_or_create_histogram('mcp_chroma_request_duration_seconds', 'Request latency', ['endpoint'], buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0])
 
 @app.get("/health")
 async def health():

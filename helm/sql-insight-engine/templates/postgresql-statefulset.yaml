@@ -1,4 +1,17 @@
 {{- if .Values.postgresql.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-postgresql-init
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgresql
+data:
+  allow-remote.sh: |
+    #!/bin/bash
+    echo "host all all all scram-sha-256" >> "$PGDATA/pg_hba.conf"
+    pg_ctl reload -D "$PGDATA"
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -38,6 +51,8 @@ spec:
         volumeMounts:
         - name: data
           mountPath: /var/lib/postgresql/data
+        - name: init-scripts
+          mountPath: /docker-entrypoint-initdb.d
         livenessProbe:
           exec:
             command:
@@ -54,6 +69,11 @@ spec:
             - {{ .Values.postgresql.env.user }}
           initialDelaySeconds: 5
           periodSeconds: 5
+      volumes:
+      - name: init-scripts
+        configMap:
+          name: {{ include "sql-insight-engine.fullname" . }}-postgresql-init
+          defaultMode: 0755
   {{- if .Values.postgresql.persistence.enabled }}
   volumeClaimTemplates:
   - metadata:
@@ -64,10 +84,6 @@ spec:
       resources:
         requests:
           storage: {{ .Values.postgresql.persistence.size }}
-  {{- else }}
-      volumes:
-      - name: data
-        emptyDir: {}
   {{- end }}
 ---
 apiVersion: v1

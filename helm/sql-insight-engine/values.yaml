@@ -4,18 +4,18 @@
 # Global settings
 global:
   imagePullPolicy: IfNotPresent
-  storageClass: local-path
+  storageClass: standard
 
 # API Service
 # ... (Keep global)
 
 # API Service
 api:
-  enabled: false
-  replicaCount: 6
+  enabled: true
+  replicaCount: 1
   image:
     repository: sql-insight-engine-api
-    tag: "1768497562" # Fixed tag
+    tag: "latest" # Fixed tag
     pullPolicy: Never # Override for local image
   service:
     type: NodePort
@@ -33,11 +33,11 @@ api:
 
 # MCP Services
 mcpDatabase:
-  enabled: false
-  replicaCount: 6
+  enabled: true
+  replicaCount: 1
   image:
     repository: sql-insight-engine-mcp-database
-    tag: "1768497562" # Fixed tag
+    tag: "latest" # Fixed tag
     pullPolicy: Never # Override for local image
   service:
     port: 8001
@@ -55,11 +55,11 @@ mcpDatabase:
     PYTHONUNBUFFERED: "1"
 
 mcpChroma:
-  enabled: false
-  replicaCount: 8
+  enabled: true
+  replicaCount: 1
   image:
     repository: sql-insight-engine-mcp-chroma
-    tag: "1768497562"
+    tag: "latest"
     pullPolicy: Never # Override for local image
   service:
     port: 8002
@@ -72,11 +72,11 @@ mcpChroma:
       cpu: "300m"
 
 mcpRegistry:
-  enabled: false
-  replicaCount: 2
+  enabled: true
+  replicaCount: 1
   image:
     repository: sql-insight-engine-mcp-registry
-    tag: "1768497562"
+    tag: "latest"
     pullPolicy: Never # Override for local image
   service:
     port: 8010
@@ -91,10 +91,10 @@ mcpRegistry:
 # Infrastructure Services
 # ... (rest of file)
 ui:
-  enabled: false
+  enabled: true
   image:
     repository: sql-insight-engine-ui
-    tag: "1768497562"
+    tag: "latest"
     pullPolicy: Never
   service:
     type: ClusterIP
@@ -102,7 +102,7 @@ ui:
 
 # Infrastructure Services
 postgresql:
-  enabled: false
+  enabled: true
   image:
     repository: postgres
     tag: "15"
@@ -117,7 +117,7 @@ postgresql:
     password: password
 
 externalTestDb:
-  enabled: false
+  enabled: true
   image:
     repository: postgres
     tag: "15"
@@ -132,7 +132,7 @@ externalTestDb:
     password: password
 
 redis:
-  enabled: false
+  enabled: true
   image:
     repository: redis
     tag: 7-alpine
@@ -143,13 +143,16 @@ redis:
     size: 1Gi
 
 rabbitmq:
-  enabled: false
+  enabled: true
   image:
     repository: rabbitmq
     tag: 3-management
   service:
     port: 5672
     managementPort: 15672
+  persistence:
+    enabled: true
+    size: 1Gi
   env:
     user: guest
     password: guest
@@ -162,12 +165,12 @@ rabbitmq:
       cpu: "200m"
 
 chromadb:
-  enabled: false
+  enabled: true
   mode: "distributed" # "standalone" or "distributed"
   replicaCount: 3 # Number of Query Executor replicas for distributed mode
   image:
     repository: chromadb/chroma
-    tag: "0.5.23" # Use specific version for stability
+    tag: "0.6.3" # Use specific version for stability
   service:
     port: 8000
   persistence:
@@ -196,7 +199,7 @@ chromadb:
       cpu: "500m"
 
 minio:
-  enabled: false
+  enabled: true
   image:
     repository: minio/minio
     tag: latest
@@ -212,7 +215,7 @@ minio:
 
 # Observability Stack
 prometheus:
-  enabled: false
+  enabled: true
   image:
     repository: prom/prometheus
     tag: latest
@@ -225,7 +228,7 @@ prometheus:
     size: 5Gi
 
 grafana:
-  enabled: false
+  enabled: true
   image:
     repository: grafana/grafana
     tag: latest
@@ -279,7 +282,7 @@ configMaps:
   enabled: true
 
 ui:
-  enabled: false
+  enabled: true
   image:
     repository: sql-insight-engine-ui
     tag: latest

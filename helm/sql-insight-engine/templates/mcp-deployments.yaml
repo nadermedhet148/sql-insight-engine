@@ -18,6 +18,16 @@ spec:
         {{- include "sql-insight-engine.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: mcp-database
     spec:
+      initContainers:
+      - name: wait-for-db
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for External Test DB..."
+          until nc -z {{ include "sql-insight-engine.fullname" . }}-external-test-db {{ .Values.externalTestDb.service.port }}; do sleep 2; done
+          echo "Database ready!"
       containers:
       - name: mcp-database
         image: "{{ .Values.mcpDatabase.image.repository }}:{{ .Values.mcpDatabase.image.tag }}"
@@ -103,6 +113,16 @@ spec:
         {{- include "sql-insight-engine.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: mcp-chroma
     spec:
+      initContainers:
+      - name: wait-for-chromadb
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for ChromaDB..."
+          until nc -z {{ include "sql-insight-engine.fullname" . }}-chromadb {{ .Values.chromadb.service.port }}; do sleep 2; done
+          echo "ChromaDB ready!"
       containers:
       - name: mcp-chroma
         image: "{{ .Values.mcpChroma.image.repository }}:{{ .Values.mcpChroma.image.tag }}"
@@ -110,26 +130,13 @@ spec:
         ports:
         - name: http
           containerPort: {{ .Values.mcpChroma.service.port }}
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: http
-          initialDelaySeconds: 15
-          periodSeconds: 20
-          timeoutSeconds: 5
-          failureThreshold: 3
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: http
-          initialDelaySeconds: 10
-          periodSeconds: 15
-          timeoutSeconds: 5
-          failureThreshold: 3
         env:
-
+        - name: PYTHONPATH
+          value: "/app"
         - name: CHROMA_HOST
-          value: "{{ include "sql-insight-engine.fullname" . }}-chromadb"
+          value: "{{ include "sql-insight-engine.fullname" . }}-chromadb-coordinator"
+        - name: UVICORN_WORKERS
+          value: "1"
         - name: GEMINI_API_KEY
           valueFrom:
             secretKeyRef:
@@ -181,6 +188,20 @@ spec:
         {{- include "sql-insight-engine.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: mcp-registry
     spec:
+      initContainers:
+      - name: wait-for-deps
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - |
+          echo "Waiting for Redis..."
+          until nc -z {{ include "sql-insight-engine.fullname" . }}-redis {{ .Values.redis.service.port }}; do sleep 2; done
+          echo "Waiting for MCP Database..."
+          until nc -z {{ include "sql-insight-engine.fullname" . }}-mcp-database {{ .Values.mcpDatabase.service.port }}; do sleep 2; done
+          echo "Waiting for MCP Chroma..."
+          until nc -z {{ include "sql-insight-engine.fullname" . }}-mcp-chroma {{ .Values.mcpChroma.service.port }}; do sleep 2; done
+          echo "All dependencies ready!"
       containers:
       - name: mcp-registry
         image: "{{ .Values.mcpRegistry.image.repository }}:{{ .Values.mcpRegistry.image.tag }}"

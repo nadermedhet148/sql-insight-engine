@@ -37,16 +37,17 @@ check_cluster() {
     echo "✓ Kubernetes cluster is reachable"
 }
 
-# 4. Helper to import images into K3s (if needed)
-# This detects if we are likely using k3s (common in local devs mentioned in context)
-# and tries to import. If not k3s, it does nothing or warns.
+# 4. Helper to import images into the local K8s cluster
 import_image_to_k3s() {
     local IMAGE_NAME=$1
     if command -v k3s &> /dev/null; then
         echo "  - Importing $IMAGE_NAME into k3s..."
         docker save "$IMAGE_NAME" | sudo k3s ctr images import - > /dev/null
+    elif command -v minikube &> /dev/null; then
+        echo "  - Loading $IMAGE_NAME into minikube..."
+        minikube image load "$IMAGE_NAME"
     else
-        echo "  - k3s command not found, skipping direct import (assuming standard Docker/Registry usage)..."
+        echo "  - WARNING: No k3s or minikube found, images may not be available in cluster"
     fi
 }
 
