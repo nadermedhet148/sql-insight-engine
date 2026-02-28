@@ -26,6 +26,8 @@ from agentic_sql.saga.consumers.metrics import (
     INSTANCE_ID, SAGA_CONSUMER_MESSAGES, SAGA_CONSUMER_DURATION,
     LLM_TOKENS, LLM_REQUESTS
 )
+from core.langfuse_client import get_langfuse
+from core.evaluators import run_evaluations_async
 
 
 
@@ -55,6 +57,17 @@ def run_result_formatting_agentic(message: QueryExecutedMessage) -> tuple[str, s
     EXECUTIVE SUMMARY: [Your professional response]
     """
     
+    # Create Langfuse generation linked to the existing saga trace
+    lf = get_langfuse()
+    generation = None
+    if lf:
+        trace = lf.trace(id=str(message.saga_id))
+        generation = trace.generation(
+            name="result-formatting",
+            model="gemini-2.0-flash",
+            input=[{"role": "user", "content": prompt}],
+        )
+
     try:
         chat = agent.start_chat(enable_automatic_function_calling=True)
         response = chat.send_message(prompt)
@@ -62,16 +75,27 @@ def run_result_formatting_agentic(message: QueryExecutedMessage) -> tuple[str, s
             text = response.text or ""
         except (ValueError, AttributeError):
             text = str(response)
-        
+
         interaction_history = get_interaction_history(chat)
         parsed = parse_llm_response(text, tags=["EXECUTIVE SUMMARY"])
 
         formatted_response = parsed.get("EXECUTIVE SUMMARY", text.strip())
         usage = extract_response_metadata(response)
-            
+
+        if generation:
+            generation.end(
+                output=formatted_response,
+                usage={
+                    "input": usage.get("prompt_token_count", 0),
+                    "output": usage.get("candidates_token_count", 0),
+                },
+            )
+
         return formatted_response, text, usage, prompt, interaction_history
     except Exception as e:
         print(f"[SAGA STEP 5] Agentic formatting failed: {e}")
+        if generation:
+            generation.end(output=str(e), level="ERROR")
         return f"Here are the findings from your data:\n\n{message.raw_results}", str(e), {}, prompt, []
 
 from core.infra.consumer import BaseConsumer
@@ -164,11 +188,26 @@ def process_result_formatting(ch, method, properties, body):
         })
         
         update_saga_state(message.saga_id, result_dict, status="completed")
-        
+
+        # Fire-and-forget LLM evaluations (answer_relevance, response_quality, sql_correctness)
+        run_evaluations_async(
+            saga_id=str(message.saga_id),
+            question=message.question,
+            sql=message.generated_sql,
+            formatted_response=formatted_response,
+        )
+
+        # Push saga_completed evaluation score and flush all pending Langfuse events
+        lf = get_langfuse()
+        if lf:
+            trace = lf.trace(id=str(message.saga_id))
+            trace.score(name="saga_completed", value=1)
+            lf.flush()
+
         # Record success metrics
         SAGA_CONSUMER_MESSAGES.labels(consumer='result_formatter', status='success', instance=INSTANCE_ID).inc()
         SAGA_CONSUMER_DURATION.labels(consumer='result_formatter').observe(duration_ms / 1000)
-        
+
         ch.basic_ack(delivery_tag=method.delivery_tag)
         
     except Exception as e:

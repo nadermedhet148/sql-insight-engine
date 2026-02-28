@@ -13,19 +13,20 @@ from core.gemini_client import GeminiClient
 from core.mcp.client import initialize_mcp, get_discovered_tools
 from account.models import User
 from agentic_sql.saga.utils import (
-    sanitize_for_json, update_saga_state, store_saga_error, 
+    sanitize_for_json, update_saga_state, store_saga_error,
     get_interaction_history, parse_llm_response, extract_response_metadata
 )
 from agentic_sql.saga.consumers.metrics import (
     INSTANCE_ID, SAGA_CONSUMER_MESSAGES, SAGA_CONSUMER_DURATION,
     LLM_TOKENS, LLM_TOOL_CALLS, LLM_REQUESTS
 )
+from core.langfuse_client import get_langfuse
 
 def extract_tables_from_sql(sql: str) -> List[str]:
     import re
     pattern = r'(?:FROM|JOIN)\s+([a-zA-Z0-9_".]+)'
     matches = re.findall(pattern, sql, re.IGNORECASE)
-    
+
     tables = []
     for match in matches:
         # Remove quotes and get the table name (last part of schema.table)
@@ -77,6 +78,24 @@ DECISION: [RELEVANT / OUT_OF_SCOPE]
 REASONING: [Your explanation]
 SQL: [The final raw PostgreSQL query (no markdown code blocks) if RELEVANT, otherwise NONE]
 """
+
+    # Create Langfuse trace and generation
+    lf = get_langfuse()
+    generation = None
+    if lf:
+        trace = lf.trace(
+            id=str(message.saga_id),
+            name="sql-query-saga",
+            user_id=str(message.user_id),
+            input={"question": message.question},
+            metadata={"account_id": str(message.account_id)},
+        )
+        generation = trace.generation(
+            name="sql-generation",
+            model="gemini-2.0-flash",
+            input=[{"role": "user", "content": prompt}],
+        )
+
     print(f"[TRACE] Starting Gemini chat for saga {message.saga_id}")
     chat = agent.start_chat(enable_automatic_function_calling=True)
     print(f"[TRACE] Sending message to Gemini for saga {message.saga_id}")
@@ -86,7 +105,7 @@ SQL: [The final raw PostgreSQL query (no markdown code blocks) if RELEVANT, othe
         full_text = response.text or ""
     except (ValueError, AttributeError):
         full_text = str(response)
-    
+
     interaction_history = get_interaction_history(chat)
     parsed = parse_llm_response(full_text, tags=["DECISION", "REASONING", "SQL"])
     print(f"[TRACE] Parsed generator response for {message.saga_id}: {parsed}")
@@ -94,10 +113,10 @@ SQL: [The final raw PostgreSQL query (no markdown code blocks) if RELEVANT, othe
     decision = str(parsed.get("DECISION", "")).upper()
     reasoning = parsed.get("REASONING", "N/A")
     sql = parsed.get("SQL", "")
-    
+
     # 1. Primary check: Explicitly tagged decision
     is_out_of_scope = "OUT_OF_SCOPE" in decision or "IRRELEVANT" in decision
-    
+
     # 2. Secondary check: If SQL is NONE or empty, and it's not RELEVANT, treat as out of scope
     if not is_out_of_scope and (not sql or sql.upper() == "NONE"):
         # Most likely out of scope if no SQL was generated
@@ -108,8 +127,8 @@ SQL: [The final raw PostgreSQL query (no markdown code blocks) if RELEVANT, othe
 
     # 3. Text keywords fallback (in case tags failed completely)
     out_of_scope_keywords = [
-        "out of your business scope", "out of you bussiness scope", 
-        "not related to the", "cannot answer", "missing data", 
+        "out of your business scope", "out of you bussiness scope",
+        "not related to the", "cannot answer", "missing data",
         "not related to any available tables", "out of scope",
         "does not exist", "unable to find the table"
     ]
@@ -120,7 +139,16 @@ SQL: [The final raw PostgreSQL query (no markdown code blocks) if RELEVANT, othe
             if reasoning == "N/A": reasoning = full_text.strip()
 
     usage = extract_response_metadata(response)
-            
+
+    if generation:
+        generation.end(
+            output=full_text,
+            usage={
+                "input": usage.get("prompt_token_count", 0),
+                "output": usage.get("candidates_token_count", 0),
+            },
+        )
+
     return sql, reasoning, prompt, usage, interaction_history, is_out_of_scope
 
 
@@ -135,14 +163,14 @@ class QueryGeneratorConsumer(BaseConsumer):
 
 def process_query_generation(ch, method, properties, body):
     start_time = time.time()
-    
+
     try:
         data = json.loads(body)
         # Note: Now receiving QueryInitiatedMessage instead of TablesCheckedMessage
         message = message_from_dict(data, QueryInitiatedMessage)
-        
+
         print(f"\n[SAGA STEP 1] Merged Agentic Query Check & Generation - Saga ID: {message.saga_id}")
-        
+
         # Get DB config
         db_config_dict = {}
         from core.database.session import get_db
@@ -164,7 +192,17 @@ def process_query_generation(ch, method, properties, body):
             db.close()
 
         generated_sql, llm_reasoning, llm_prompt, llm_usage, interaction_history, is_out_of_scope = run_agentic_sql_generation(message, db_config_dict)
-        
+
+        # Push in_scope evaluation score
+        lf = get_langfuse()
+        if lf:
+            trace = lf.trace(id=str(message.saga_id))
+            trace.score(
+                name="in_scope",
+                value=0 if is_out_of_scope else 1,
+                comment=llm_reasoning[:200] if llm_reasoning else None,
+            )
+
         # Record LLM metrics
         LLM_REQUESTS.labels(consumer='query_generator', model='gemini').inc()
         if llm_usage:
@@ -173,16 +211,16 @@ def process_query_generation(ch, method, properties, body):
             tool_count = llm_usage.get('tool_calls', 0)
             if tool_count:
                 LLM_TOOL_CALLS.labels(consumer='query_generator').inc(tool_count)
-        
+
         if is_out_of_scope:
             duration_ms = (time.time() - start_time) * 1000
             duration_sec = duration_ms / 1000
             print(f"[SAGA STEP 1] 🛑 Question is OUT OF SCOPE: {llm_reasoning[:100]}...")
-            
+
             # Record metrics
             SAGA_CONSUMER_MESSAGES.labels(consumer='query_generator', status='out_of_scope', instance=INSTANCE_ID).inc()
             SAGA_CONSUMER_DURATION.labels(consumer='query_generator').observe(duration_sec)
-            
+
             store_saga_error(
                 message=message,
                 error_step="generate_query_agentic",
@@ -191,14 +229,14 @@ def process_query_generation(ch, method, properties, body):
                 formatted_response=f"As your Senior Business Intelligence Consultant, I've determined that this inquiry falls outside our current business focus and database scope. {llm_reasoning}",
                 is_out_of_scope=True
             )
-            
+
             # Acknowledge and stop saga
             ch.basic_ack(delivery_tag=method.delivery_tag)
             return
-        
+
         duration_ms = (time.time() - start_time) * 1000
         duration_sec = duration_ms / 1000
-        
+
         next_message = QueryGeneratedMessage(
             saga_id=message.saga_id,
             user_id=message.user_id,
@@ -210,12 +248,12 @@ def process_query_generation(ch, method, properties, body):
             business_context=getattr(message, "business_context", []),
             business_documents_count=getattr(message, "business_documents_count", 0)
         )
-        
+
         next_message.call_stack = message.call_stack.copy()
         next_message.all_tool_calls = message.all_tool_calls.copy()
         next_message._current_tool_calls = message._current_tool_calls.copy()
         message._current_tool_calls = []
-        
+
         next_message.add_to_call_stack(
             step_name="generate_query_agentic",
             status="success",
@@ -227,31 +265,31 @@ def process_query_generation(ch, method, properties, body):
             tools_used=sanitize_for_json(next_message._current_tool_calls.copy()),
             interaction_history=interaction_history
         )
-        
+
         print(f"[SAGA STEP 1] Reasoning: {llm_reasoning[:200]}...")
         print(f"[SAGA STEP 1] Token Usage: {llm_usage}")
         print(f"[SAGA STEP 1] ✓ SQL generated in {duration_ms:.2f}ms")
-        
+
         # Record success metrics
         SAGA_CONSUMER_MESSAGES.labels(consumer='query_generator', status='success', instance=INSTANCE_ID).inc()
         SAGA_CONSUMER_DURATION.labels(consumer='query_generator').observe(duration_sec)
-        
+
         publisher = SagaPublisher()
         publisher.publish_query_execution(next_message)
-        
+
         update_saga_state(message.saga_id, next_message.to_dict())
-        
+
         ch.basic_ack(delivery_tag=method.delivery_tag)
-        
+
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
         duration_sec = duration_ms / 1000
         print(f"[SAGA STEP 1] ✗ Agentic Error: {str(e)}")
-        
+
         # Record error metrics
         SAGA_CONSUMER_MESSAGES.labels(consumer='query_generator', status='error', instance=INSTANCE_ID).inc()
         SAGA_CONSUMER_DURATION.labels(consumer='query_generator').observe(duration_sec)
-        
+
         store_saga_error(
             message=message,
             error_step="generate_query_agentic",
@@ -264,4 +302,3 @@ def process_query_generation(ch, method, properties, body):
 def start_query_generator_consumer(host: str = None):
     consumer = QueryGeneratorConsumer(host=host)
     consumer.start_consuming()
-

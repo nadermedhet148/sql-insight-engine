@@ -17,6 +17,7 @@ from agentic_sql.saga.utils import (
 from agentic_sql.saga.consumers.metrics import (
     INSTANCE_ID, SAGA_CONSUMER_MESSAGES, SAGA_CONSUMER_DURATION
 )
+from core.langfuse_client import get_langfuse
 
 
 
@@ -140,13 +141,23 @@ def process_query_execution(ch, method, properties, body):
         
         duration_ms = (time.time() - start_time) * 1000
         
+        # Push sql_valid evaluation score
+        lf = get_langfuse()
+        if lf:
+            trace = lf.trace(id=str(message.saga_id))
+            trace.score(
+                name="sql_valid",
+                value=1 if success else 0,
+                comment=raw_results[:200] if not success else None,
+            )
+
         if not success:
             print(f"[SAGA STEP 2] ✗ Native execution failed: {raw_results[:100]}...")
-            
+
             # Record error metrics
             SAGA_CONSUMER_MESSAGES.labels(consumer='query_executor', status='error', instance=INSTANCE_ID).inc()
             SAGA_CONSUMER_DURATION.labels(consumer='query_executor').observe(duration_ms / 1000)
-            
+
             store_saga_error(
                 message=message,
                 error_step="execute_query_native",
