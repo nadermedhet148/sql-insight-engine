@@ -24,7 +24,9 @@ echo "✓ MinIO bucket ready"
 # Step 3: Build and import images
 echo ""
 echo "[3/5] Building and importing Docker images..."
-cd /home/nader/projects/sql-insight-engine
+# Get project root (parent directory of scripts/)
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_ROOT"
 docker compose build api mcp-chroma
 docker save sql-insight-engine-api:latest sql-insight-engine-mcp-chroma:latest | sudo k3s ctr images import -
 echo "✓ Images imported to k3s"

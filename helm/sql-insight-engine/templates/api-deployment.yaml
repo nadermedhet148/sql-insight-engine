@@ -20,7 +20,7 @@ spec:
     spec:
       containers:
       - name: api
-        image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+        image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag | int64 }}"
         imagePullPolicy: {{ .Values.api.image.pullPolicy | default .Values.global.imagePullPolicy }}
         ports:
         - name: http

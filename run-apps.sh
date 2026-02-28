@@ -52,28 +52,29 @@ echo "Deploying Applications..."
 helm upgrade --install sql-insight-engine ./helm/sql-insight-engine \
     $REUSE_VALUES \
     --set api.enabled=true \
-    --set api.replicaCount=6 \
+    --set api.replicaCount=3 \
     --set api.image.tag=$TAG \
     --set ui.enabled=true \
     --set ui.image.tag=$TAG \
     --set mcpDatabase.enabled=true \
-    --set mcpDatabase.replicaCount=6 \
+    --set mcpDatabase.replicaCount=3 \
     --set mcpDatabase.image.tag=$TAG \
     --set mcpChroma.enabled=true \
-    --set mcpChroma.replicaCount=6 \
+    --set mcpChroma.replicaCount=2 \
     --set mcpChroma.image.tag=$TAG \
     --set mcpRegistry.enabled=true \
     --set mcpRegistry.image.tag=$TAG \
     --set secrets.geminiApiKey="${GEMINI_API_KEY}" \
-    --set api.env.MOCK_GEMINI="fasle" \
+    --set api.env.MOCK_GEMINI="false" \
     --set postgresql.enabled=true \
     --set externalTestDb.enabled=true \
     --set redis.enabled=true \
     --set rabbitmq.enabled=true \
     --set minio.enabled=true \
     --set chromadb.enabled=true \
-    --set mcpChroma.resources.limits.memory="1Gi" \
-    --set mcpChroma.resources.requests.memory="512Mi" \
+    --set mcpChroma.resources.limits.memory="3Gi" \
+    --set mcpChroma.resources.requests.memory="2Gi" \
+    --set mcpChroma.env.UVICORN_WORKERS="1" \
     --create-namespace \
     --namespace $NAMESPACE
 
