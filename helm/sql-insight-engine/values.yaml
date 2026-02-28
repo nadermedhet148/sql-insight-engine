@@ -51,7 +51,7 @@ mcpDatabase:
   env:
     UVICORN_WORKERS: "1"
     MCP_REGISTRY_URL: "http://sql-insight-engine-mcp-registry:8010"
-    MCP_SERVER_URL: "http://sql-insight-engine-mcp-database:8001/sse"
+    MCP_SERVER_URL: "http://sql-insight-engine-mcp-database:8001/mcp"
     PYTHONUNBUFFERED: "1"
 
 mcpChroma:
@@ -187,6 +187,28 @@ chromadb:
     accessKey: "minioadmin"
     secretKey: "minioadmin123"
     useSSL: false
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+neo4j:
+  enabled: false
+  image:
+    repository: neo4j
+    tag: "5"
+  service:
+    boltPort: 7687
+    httpPort: 7474
+  persistence:
+    enabled: true
+    size: 5Gi
+  env:
+    user: neo4j
+    password: password
   resources:
     requests:
       memory: "512Mi"

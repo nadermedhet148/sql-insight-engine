@@ -195,6 +195,93 @@ spec:
     app.kubernetes.io/component: chromadb
 {{- end }}
 ---
+{{- if .Values.neo4j.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-neo4j
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: neo4j
+spec:
+  serviceName: {{ include "sql-insight-engine.fullname" . }}-neo4j
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "sql-insight-engine.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: neo4j
+  template:
+    metadata:
+      labels:
+        {{- include "sql-insight-engine.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: neo4j
+    spec:
+      containers:
+      - name: neo4j
+        image: "{{ .Values.neo4j.image.repository }}:{{ .Values.neo4j.image.tag }}"
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        ports:
+        - name: bolt
+          containerPort: {{ .Values.neo4j.service.boltPort }}
+        - name: http
+          containerPort: {{ .Values.neo4j.service.httpPort }}
+        env:
+        - name: NEO4J_AUTH
+          value: "{{ .Values.neo4j.env.user }}/{{ .Values.neo4j.env.password }}"
+        resources:
+          {{- toYaml .Values.neo4j.resources | nindent 10 }}
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        readinessProbe:
+          tcpSocket:
+            port: bolt
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: bolt
+          initialDelaySeconds: 60
+          periodSeconds: 20
+  {{- if .Values.neo4j.persistence.enabled }}
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: {{ .Values.global.storageClass }}
+      resources:
+        requests:
+          storage: {{ .Values.neo4j.persistence.size }}
+  {{- else }}
+      volumes:
+      - name: data
+        emptyDir: {}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "sql-insight-engine.fullname" . }}-neo4j
+  labels:
+    {{- include "sql-insight-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: neo4j
+spec:
+  type: ClusterIP
+  ports:
+  - port: {{ .Values.neo4j.service.boltPort }}
+    targetPort: bolt
+    protocol: TCP
+    name: bolt
+  - port: {{ .Values.neo4j.service.httpPort }}
+    targetPort: http
+    protocol: TCP
+    name: http
+  selector:
+    {{- include "sql-insight-engine.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: neo4j
+{{- end }}
+---
 {{- if .Values.minio.enabled }}
 apiVersion: apps/v1
 kind: StatefulSet
