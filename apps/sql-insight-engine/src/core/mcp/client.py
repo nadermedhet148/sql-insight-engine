@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional, Callable
 from dataclasses import dataclass
 from mcp import ClientSession
-from mcp.client.sse import sse_client
+from mcp.client.streamable_http import streamable_http_client
 
 # Increased thread pool for better parallelism
 _mcp_executor = ThreadPoolExecutor(max_workers=100, thread_name_prefix="mcp_tool_")
@@ -106,8 +106,8 @@ class GenericMCPClient:
         for attempt in range(retries):
             print(f"[TRACE] list_tools for {self.sse_url} (Attempt {attempt+1})")
             try:
-                async with sse_client(self.sse_url) as (read, write):
-                    print(f"[TRACE] SSE connected for {self.sse_url}")
+                async with streamable_http_client(self.sse_url) as (read, write):
+                    print(f"[TRACE] HTTP connected for {self.sse_url}")
                     async with ClientSession(read, write) as session:
                         print(f"[TRACE] Session created, initializing... {self.sse_url}")
                         await asyncio.wait_for(session.initialize(), timeout=5.0)
@@ -144,7 +144,7 @@ class GenericMCPClient:
 
                 # Use connection pool approach with fresh connections
                 # SSE connections are stateful, so we create per-call but with optimized settings
-                async with sse_client(self.sse_url) as (read, write):
+                async with streamable_http_client(self.sse_url) as (read, write):
                     async with ClientSession(read, write) as session:
                         print(f"[TRACE] session initializing for {tool_name}...")
                         await asyncio.wait_for(session.initialize(), timeout=5.0)

@@ -5,12 +5,11 @@ import logging
 import json
 from typing import Any, List, Optional
 from mcp.server import Server, NotificationOptions
-from mcp.server.sse import SseServerTransport
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.types import Tool, TextContent
 import chromadb
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from mcp.server.models import InitializationOptions
 import mcp.types as types
 import uvicorn
 import httpx
@@ -22,7 +21,7 @@ from starlette.responses import Response
 load_dotenv()
 
 REGISTRY_URL = os.getenv("MCP_REGISTRY_URL", "http://mcp-registry:8010")
-SERVER_URL = os.getenv("MCP_SERVER_URL", "http://mcp-chroma:8002/sse")
+SERVER_URL = os.getenv("MCP_SERVER_URL", "http://mcp-chroma:8002/mcp")
 INSTANCE_ID = os.getenv("HOSTNAME", socket.gethostname())
 
 # MCP Tool Metrics
@@ -85,19 +84,6 @@ class ChromaMCPServer:
         async def list_tools() -> list[Tool]:
             return [
                 Tool(
-                    name="search_relevant_schema",
-                    description="Search for relevant database schema parts",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {
-                            "query": {"type": "string", "description": "The search query or keyword"},
-                            "account_id": {"type": "string", "description": "The account ID to filter by"},
-                            "n_results": {"type": "integer", "default": 2, "description": "Number of results to return"}
-                        },
-                        "required": ["query", "account_id"]
-                    }
-                ),
-                Tool(
                     name="search_relevant_knowledgebase",
                     description="Search for relevant business knowledge or documentation",
                     inputSchema={
@@ -120,35 +106,30 @@ class ChromaMCPServer:
             logger.info(f"Tool call: {name} | Args: {arguments}")
             
             try:
-                if name in ["search_relevant_schema", "search_relevant_knowledgebase"]:
+                if name == "search_relevant_knowledgebase":
                     query = arguments["query"]
                     account_id = str(arguments["account_id"])
-                    n_results = int(arguments.get("n_results", 2 if name == "search_relevant_schema" else 3))
-                    
-                    # Determine collection based on tool name
-                    collection_name = "account_schema_info" if name == "search_relevant_schema" else "knowledgebase"
-                    
-                    # 1. Get embedding
+                    n_results = int(arguments.get("n_results", 3))
+
                     logger.info(f"Generating embedding for query: {query[:50]}...")
                     embedding = await self._get_embedding_from_mcp(query)
-                    
-                    # 2. Query Chroma
-                    logger.info(f"Querying Chroma collection '{collection_name}' for account: {account_id}, results limit: {n_results}")
+
+                    logger.info(f"Querying Chroma 'knowledgebase' for account: {account_id}, limit: {n_results}")
                     client = self._get_client()
-                    collection = client.get_or_create_collection(name=collection_name)
+                    collection = client.get_or_create_collection(name="knowledgebase")
                     results = collection.query(
                         query_embeddings=[embedding],
                         n_results=n_results,
                         where={"account_id": account_id}
                     )
-                    
+
                     if not results or not results.get('documents') or not results['documents'][0]:
-                        logger.info(f"No relevant items found in {collection_name}")
+                        logger.info("No relevant items found in knowledgebase")
                         result = [TextContent(type="text", text="No relevant information found.")]
                     else:
                         docs = results['documents'][0]
-                        logger.info(f"Found {len(docs)} relevant documents in {collection_name}")
-                        formatted = f"# Relevant {collection_name.replace('_', ' ').title()}\n\n" + "\n".join(f"- {d}" for d in docs)
+                        logger.info(f"Found {len(docs)} relevant documents in knowledgebase")
+                        formatted = "# Relevant Knowledge Base\n\n" + "\n".join(f"- {d}" for d in docs)
                         result = [TextContent(type="text", text=formatted)]
                 else:
                     logger.warning(f"Unknown tool requested: {name}")
@@ -171,47 +152,26 @@ class ChromaMCPServer:
         return server
 
 mcp_server = ChromaMCPServer()
-from starlette.routing import Route
 
-app = FastAPI()
-sse = SseServerTransport("/messages")
+from contextlib import asynccontextmanager
 
-class SSEHandler:
-    async def __call__(self, scope, receive, send):
-        logger.info(f"New SSE connection from {scope.get('client')}")
-        try:
-            server = mcp_server.create_server()
-            async with sse.connect_sse(scope, receive, send) as (read_stream, write_stream):
-                logger.info("SSE connection established, running server...")
-                await server.run(
-                    read_stream,
-                    write_stream,
-                    InitializationOptions(
-                        server_name=mcp_server.server_name,
-                        server_version="0.1.0",
-                        capabilities=server.get_capabilities(
-                            notification_options=NotificationOptions(),
-                            experimental_capabilities={},
-                        ),
-                    )
-                )
-                logger.info("mcp_server.server.run returned")
-        except Exception as e:
-            logger.exception(f"Error in SSEHandler: {e}")
-        finally:
-            logger.info("SSEHandler finished")
+server_instance = mcp_server.create_server()
+session_manager = StreamableHTTPSessionManager(
+    app=server_instance,
+    stateless=True,
+    json_response=True,
+)
 
-class MessagesHandler:
-    async def __call__(self, scope, receive, send):
-        logger.info(f"New message request from {scope.get('client')}")
-        try:
-            await sse.handle_post_message(scope, receive, send)
-            logger.info("Message handled")
-        except Exception as e:
-            logger.exception(f"Error in MessagesHandler: {e}")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with session_manager.run():
+        yield
 
-app.routes.append(Route("/sse", SSEHandler(), methods=["GET"]))
-app.routes.append(Route("/messages", MessagesHandler(), methods=["POST"]))
+app = FastAPI(lifespan=lifespan)
+
+@app.post("/mcp")
+async def handle_mcp(request: Request):
+    await session_manager.handle_request(request)
 
 # Prometheus metrics
 REQUEST_COUNT = Counter('mcp_chroma_requests_total', 'Total requests', ['method', 'endpoint'])

@@ -35,50 +35,48 @@ def extract_tables_from_sql(sql: str) -> List[str]:
     return list(set(tables))
 
 def run_agentic_sql_generation(message: QueryInitiatedMessage, db_config_dict: Dict[str, Any]) -> tuple[str, str, str, Dict, List, bool]:
-    
+    from core.services.schema_graph_retriever import retrieve_relevant_tables
+
+    # Pre-fetch relevant schema via Graph-RAG (ChromaDB vector search + Neo4j FK expansion)
+    print(f"[SAGA STEP 1] Retrieving schema via Graph-RAG for saga {message.saga_id}")
+    schema_context = retrieve_relevant_tables(
+        question=message.question,
+        account_id=str(message.account_id),
+        top_k=3,
+    )
+
     db_url = f"postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}"
-    
+
+    # Give the LLM: business knowledge search + db tools as fallback (no search_relevant_schema)
     all_tools = get_discovered_tools(message=message, context={"db_url": db_url, "account_id": message.account_id})
-    # Generator should NOT have run_query to prevent premature execution
-    tools = [t for t in all_tools if t.__name__ != "run_query"]
-    
-    # Ensure we have the critical database tools
-    if not any(t.__name__ == "list_tables" for t in tools):
-        print(f"[SAGA STEP 1] ⚠ Critical tool 'list_tables' missing. Forcing MCP refresh...")
-        from core.mcp.client import mcp_manager
-        mcp_manager.refresh_tools_sync(force=True)
-        # Re-fetch tools
-        all_tools = get_discovered_tools(message=message, context={"db_url": db_url, "account_id": message.account_id})
-        tools = [t for t in all_tools if t.__name__ != "run_query"]
-    
-    if not any(t.__name__ == "list_tables" for t in tools):
-         print(f"[SAGA STEP 1] 🛑 Still missing 'list_tables' tool after refresh. Available: {[t.__name__ for t in tools]}")
-         # Proceeding will likely result in OUT_OF_SCOPE, but at least we warned.
+    tools = [
+        t for t in all_tools
+        if t.__name__ in ("search_relevant_knowledgebase", "list_tables", "describe_table")
+    ]
 
     agent = GeminiClient(tools=tools)
-    
-    prompt = f"""You are a Senior SQL Analyst and Gatekeeper. Your goal is to write a PostgreSQL query for: "{message.question}"
-    
-    DATABASE CONNECTION INFO:
-    Use this db_url for any database tools: postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}
 
-    CRITICAL RULES:
-    1. FIRST, use `list_tables(db_url=...)` to see which tables exist.
-    2. Then, use `search_relevant_schema(query=..., account_id=..., n_results=...)` to identify relevant tables.
-    3. YOU MUST call `describe_table(table_name=..., db_url=...)` for EVERY table you include in your SQL to get the exact column names.
-    4. If the question is NOT related to the available database schema or business scope, state clearly that it is "OUT_OF_SCOPE" and explain why.
-    5. Return a list of used table names.
-    
-    STRATEGY:
-    - Determine if the question is RELEVANT or OUT_OF_SCOPE.
-    - If RELEVANT, formulate the exact PostgreSQL query.
-    - If OUT_OF_SCOPE, provide a professional explanation.
-    
-    RESPONSE FORMAT (STRICT):
-    DECISION: [RELEVANT / OUT_OF_SCOPE]
-    REASONING: [Your explanation of the decision and the data found]
-    SQL: [The final raw PostgreSQL query (without markdown code blocks or "sql" prefix) if RELEVANT, otherwise NONE]
-    """
+    schema_section = schema_context if schema_context else "Schema retrieval returned no results."
+
+    prompt = f"""You are a Senior SQL Analyst and Gatekeeper. Your goal is to write a PostgreSQL query for: "{message.question}"
+
+DATABASE CONNECTION:
+db_url: postgresql://{db_config_dict['username']}:{db_config_dict['password']}@{db_config_dict['host']}:{db_config_dict['port'] or 5432}/{db_config_dict['db_name']}
+
+PRE-RETRIEVED SCHEMA (use this first — it was selected for relevance to your question):
+{schema_section}
+
+RULES:
+1. Prefer the pre-retrieved schema above. It already contains the most relevant tables.
+2. If a table or column you need is missing from the schema above, use list_tables and describe_table to look it up.
+3. Use search_relevant_knowledgebase to look up business rules or domain definitions when needed (e.g. "churn", "active user").
+4. If the question cannot be answered from the available schema, respond with DECISION: OUT_OF_SCOPE.
+
+RESPONSE FORMAT (STRICT):
+DECISION: [RELEVANT / OUT_OF_SCOPE]
+REASONING: [Your explanation]
+SQL: [The final raw PostgreSQL query (no markdown code blocks) if RELEVANT, otherwise NONE]
+"""
     print(f"[TRACE] Starting Gemini chat for saga {message.saga_id}")
     chat = agent.start_chat(enable_automatic_function_calling=True)
     print(f"[TRACE] Sending message to Gemini for saga {message.saga_id}")

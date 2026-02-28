@@ -11,7 +11,7 @@ services:
       - insight_network
     environment:
       - REDIS_HOST=redis
-      - 'MCP_SERVICES=[{"name": "mcp-database", "url": "http://mcp-database:8001/sse"}, {"name": "mcp-chroma", "url": "http://mcp-chroma:8002/sse"}]'
+      - 'MCP_SERVICES=[{"name": "mcp-database", "url": "http://mcp-database:8001/mcp"}, {"name": "mcp-chroma", "url": "http://mcp-chroma:8002/mcp"}]'
 
   metadata_store:
     image: postgres:15
@@ -52,6 +52,19 @@ services:
       - chroma_data:/chroma/chroma
     networks:
       - insight_network
+
+  neo4j:
+    image: neo4j:5
+    container_name: neo4j
+    ports:
+      - "7474:7474"   # Browser UI: http://localhost:7474
+      - "7687:7687"   # Bolt protocol
+    volumes:
+      - neo4j_data:/data
+    networks:
+      - insight_network
+    environment:
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-password}
 
   minio:
     image: minio/minio
@@ -114,15 +127,19 @@ services:
       - RABBITMQ_HOST=rabbitmq
       - CHROMA_HOST=chromadb
       - MINIO_HOST=minio
-      - DATABASE_MCP_URL=http://mcp-database:8001/sse
-      - CHROMA_MCP_URL=http://mcp-chroma:8002/sse
+      - DATABASE_MCP_URL=http://mcp-database:8001/mcp
+      - CHROMA_MCP_URL=http://mcp-chroma:8002/mcp
       - DB_URL=${EXTERNAL_TEST_DB_URL}
       - MCP_REGISTRY_URL=http://mcp-registry:8010
-      - MCP_SERVER_URL=http://mcp-database:8001/sse
+      - MCP_SERVER_URL=http://mcp-database:8001/mcp
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD:-password}
       - PYTHONUNBUFFERED=1
     depends_on:
       - metadata_store
       - chromadb
+      - neo4j
       - minio
       - rabbitmq
       - redis
@@ -214,6 +231,7 @@ volumes:
   metadata_data:
   external_test_data:
   chroma_data:
+  neo4j_data:
   minio_data:
   prometheus_data:
   loki_data:

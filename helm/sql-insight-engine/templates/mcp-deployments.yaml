@@ -208,7 +208,7 @@ spec:
         - name: REDIS_HOST
           value: "{{ include "sql-insight-engine.fullname" . }}-redis"
         - name: MCP_SERVICES
-          value: '[{"name": "mcp-database", "url": "http://{{ include "sql-insight-engine.fullname" . }}-mcp-database:{{ .Values.mcpDatabase.service.port }}/sse"}, {"name": "mcp-chroma", "url": "http://{{ include "sql-insight-engine.fullname" . }}-mcp-chroma:{{ .Values.mcpChroma.service.port }}/sse"}]'
+          value: '[{"name": "mcp-database", "url": "http://{{ include "sql-insight-engine.fullname" . }}-mcp-database:{{ .Values.mcpDatabase.service.port }}/mcp"}, {"name": "mcp-chroma", "url": "http://{{ include "sql-insight-engine.fullname" . }}-mcp-chroma:{{ .Values.mcpChroma.service.port }}/mcp"}]'
         resources:
           {{- toYaml .Values.mcpRegistry.resources | nindent 10 }}
 ---

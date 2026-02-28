@@ -4,12 +4,11 @@ import sys
 import logging
 from typing import Any, Optional, Dict
 from mcp.server import Server, NotificationOptions
-from mcp.server.sse import SseServerTransport
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.types import Tool, TextContent
 from sqlalchemy import create_engine, inspect, text
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from mcp.server.models import InitializationOptions
 import mcp.types as types
 import uvicorn
 import httpx
@@ -21,7 +20,7 @@ from starlette.responses import Response
 load_dotenv()
 
 REGISTRY_URL = os.getenv("MCP_REGISTRY_URL", "http://mcp-registry:8010")
-SERVER_URL = os.getenv("MCP_SERVER_URL", "http://mcp-database:8001/sse")
+SERVER_URL = os.getenv("MCP_SERVER_URL", "http://mcp-database:8001/mcp")
 INSTANCE_ID = os.getenv("HOSTNAME", socket.gethostname())
 
 # MCP Tool Metrics
@@ -204,9 +203,15 @@ class DatabaseMCPServer:
 
 
 mcp_server = DatabaseMCPServer()
-from starlette.routing import Route
 
 from contextlib import asynccontextmanager
+
+server_instance = mcp_server.create_server()
+session_manager = StreamableHTTPSessionManager(
+    app=server_instance,
+    stateless=True,
+    json_response=True,
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -228,49 +233,15 @@ async def lifespan(app: FastAPI):
                 logger.error(f"Failed to register: {resp.status_code} - {resp.text}")
     except Exception as e:
         logger.error(f"Registration failed: {e}")
-    
-    yield
-    # Shutdown logic if needed
+
+    async with session_manager.run():
+        yield
 
 app = FastAPI(lifespan=lifespan)
-sse = SseServerTransport("/messages")
 
-class SSEHandler:
-    async def __call__(self, scope, receive, send):
-        logger.info(f"New SSE connection from {scope.get('client')}")
-        try:
-            server = mcp_server.create_server()
-            async with sse.connect_sse(scope, receive, send) as (read_stream, write_stream):
-                logger.info("SSE connection established, running server...")
-                await server.run(
-                    read_stream,
-                    write_stream,
-                    InitializationOptions(
-                        server_name=mcp_server.server_name,
-                        server_version="0.1.0",
-                        capabilities=server.get_capabilities(
-                            notification_options=NotificationOptions(),
-                            experimental_capabilities={},
-                        ),
-                    )
-                )
-                logger.info("mcp_server.server.run returned")
-        except Exception as e:
-            logger.exception(f"Error in SSEHandler: {e}")
-        finally:
-            logger.info("SSEHandler finished")
-
-class MessagesHandler:
-    async def __call__(self, scope, receive, send):
-        logger.info(f"New message request from {scope.get('client')}")
-        try:
-            await sse.handle_post_message(scope, receive, send)
-            logger.info("Message handled")
-        except Exception as e:
-            logger.exception(f"Error in MessagesHandler: {e}")
-
-app.routes.append(Route("/sse", SSEHandler(), methods=["GET"]))
-app.routes.append(Route("/messages", MessagesHandler(), methods=["POST"]))
+@app.post("/mcp")
+async def handle_mcp(request: Request):
+    await session_manager.handle_request(request)
 
 # Prometheus metrics
 _req_count_name = 'mcp_database_requests_total'

@@ -118,7 +118,7 @@ async def monitor_servers():
                 servers_data = r.hgetall(REDIS_KEY)
                 for key, data in servers_data.items():
                     server = MCPServerInfo.model_validate_json(data)
-                    base_url = server.url.replace("/sse", "")
+                    base_url = server.url.replace("/mcp", "").replace("/sse", "")
                     health_url = f"{base_url}/health"
                     
                     try:

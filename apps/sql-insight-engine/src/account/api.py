@@ -35,15 +35,14 @@ def create_user(user: UserCreate, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
-from core.services.database_service import database_service
-from core.services.knowledge_service import index_text_content
+from core.services.schema_graph_indexer import index_schema_to_graph
 
 @router.post("/{user_id}/config", response_model=Any)
 def add_db_config(user_id: int, config: UserDBConfigCreate, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     if user.db_config:
          raise HTTPException(status_code=400, detail="Configuration already exists for this user")
 
@@ -60,42 +59,12 @@ def add_db_config(user_id: int, config: UserDBConfigCreate, db: Session = Depend
         db.add(new_config)
         db.commit()
         db.refresh(new_config)
-        
-        
-        # Trigger schema indexing - one document per table
+
+        # Trigger Graph-RAG schema indexing (ChromaDB + Neo4j)
         try:
-            # Get list of all tables
-            table_names = database_service.get_table_names(new_config)
-            
-            if table_names:
-                indexed_count = 0
-                failed_count = 0
-                
-                for table_name in table_names:
-                    # Get detailed schema for this table
-                    result = database_service.describe_table(new_config, table_name)
-                    
-                    if result.success:
-                        # Create a separate document for each table
-                        table_filename = f"table_{new_config.db_name}_{table_name}.md"
-                        index_text_content(
-                            account_id=user.account_id,
-                            filename=table_filename,
-                            content=result.data,
-                            collection_name="account_schema_info"
-                        )
-                        indexed_count += 1
-                    else:
-                        print(f"Warning: Failed to get schema for table {table_name}: {result.error}")
-                        failed_count += 1
-                
-                print(f"Post-config: Indexed {indexed_count} tables from {new_config.db_name} to knowledge base.")
-                if failed_count > 0:
-                    print(f"Warning: Failed to index {failed_count} tables.")
-            else:
-                print(f"Warning: No tables found in database {new_config.db_name}")
+            index_schema_to_graph(account_id=user.account_id, db_config=new_config)
         except Exception as e:
-            print(f"Warning: Could not auto-index schema: {e}")
+            print(f"Warning: Could not auto-index schema graph: {e}")
 
         return {"id": new_config.id, "user_id": new_config.user_id, "host": new_config.host, "db_name": new_config.db_name, "username": new_config.username}
     except Exception as e:
