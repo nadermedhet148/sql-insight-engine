@@ -19,3 +19,4 @@ httpx
 prometheus-fastapi-instrumentator
 neo4j>=5.0.0
 langfuse>=2.0.0
+jinja2

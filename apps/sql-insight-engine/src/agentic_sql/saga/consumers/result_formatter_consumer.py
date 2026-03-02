@@ -6,6 +6,7 @@ This is the final step in the saga.
 """
 
 import asyncio
+import io
 import json
 import time
 import socket
@@ -19,7 +20,7 @@ from agentic_sql.saga.state_store import get_saga_state_store
 from core.gemini_client import GeminiClient
 from core.mcp.client import get_discovered_tools
 from agentic_sql.saga.utils import (
-    sanitize_for_json, update_saga_state, store_saga_error, 
+    sanitize_for_json, update_saga_state, store_saga_error,
     get_interaction_history, parse_llm_response, extract_response_metadata
 )
 from agentic_sql.saga.consumers.metrics import (
@@ -28,6 +29,10 @@ from agentic_sql.saga.consumers.metrics import (
 )
 from core.langfuse_client import get_langfuse
 from core.evaluators import run_evaluations_async
+from core.infra.minio_client import get_minio_client, create_bucket_if_not_exists
+from core.services.report_generator import get_chart_config, build_html_report
+
+_REPORTS_BUCKET = "reports"
 
 
 
@@ -98,6 +103,36 @@ def run_result_formatting_agentic(message: QueryExecutedMessage) -> tuple[str, s
             generation.end(output=str(e), level="ERROR")
         return f"Here are the findings from your data:\n\n{message.raw_results}", str(e), {}, prompt, []
 
+def _generate_and_upload_report(message: QueryExecutedMessage, formatted_response: str) -> str | None:
+    """Build the HTML report and upload it to MinIO. Returns the report URL or None on failure."""
+    try:
+        gemini = GeminiClient()
+        chart_config = get_chart_config(message.question, message.raw_results, gemini)
+        html_content = build_html_report(
+            question=message.question,
+            executive_summary=formatted_response,
+            raw_results=message.raw_results,
+            chart_config=chart_config,
+        )
+        html_bytes = html_content.encode("utf-8")
+        create_bucket_if_not_exists(_REPORTS_BUCKET)
+        minio_client = get_minio_client()
+        object_key = f"{message.account_id}/{message.saga_id}.html"
+        minio_client.put_object(
+            _REPORTS_BUCKET,
+            object_key,
+            io.BytesIO(html_bytes),
+            length=len(html_bytes),
+            content_type="text/html",
+        )
+        report_url = f"/users/{message.user_id}/query/{message.saga_id}/report"
+        print(f"[SAGA STEP 3] ✓ HTML report uploaded → {object_key}")
+        return report_url
+    except Exception as exc:
+        print(f"[SAGA STEP 3] ⚠ Report generation failed (non-fatal): {exc}")
+        return None
+
+
 from core.infra.consumer import BaseConsumer
 
 class ResultFormatterConsumer(BaseConsumer):
@@ -121,7 +156,10 @@ def process_result_formatting(ch, method, properties, body):
         
         # Agentic formatting
         formatted_response, reasoning, llm_usage, llm_prompt, interaction_history = run_result_formatting_agentic(message)
-        
+
+        # HTML report generation (non-fatal — result is still stored if this fails)
+        report_url = _generate_and_upload_report(message, formatted_response)
+
         duration_ms = (time.time() - start_time) * 1000
         
         # Record LLM metrics
@@ -144,7 +182,8 @@ def process_result_formatting(ch, method, properties, body):
             reasoning=reasoning,
             formatted_response=formatted_response,
             success=True,
-            error=None
+            error=None,
+            report_url=report_url,
         )
         
         final_message.call_stack = message.call_stack.copy()
@@ -184,7 +223,8 @@ def process_result_formatting(ch, method, properties, body):
         result_dict.update({
             "success": True,
             "total_duration_ms": total_duration,
-            "total_tokens": total_tokens
+            "total_tokens": total_tokens,
+            "report_url": report_url,
         })
         
         update_saga_state(message.saga_id, result_dict, status="completed")

@@ -1,5 +1,5 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -8,6 +8,7 @@ from account.models import User, UsageLog
 from agentic_sql.saga.messages import QueryInitiatedMessage
 from agentic_sql.saga.publisher import get_saga_publisher
 from agentic_sql.saga.state_store import get_saga_state_store
+from core.infra.minio_client import get_minio_client
 
 
 class NaturalLanguageQueryRequest(BaseModel):
@@ -166,4 +167,37 @@ def get_query_status(user_id: int, saga_id: str, db: Session = Depends(get_db)):
             message="Query is still being processed"
         )
 
+
+@router.get("/{user_id}/query/{saga_id}/report")
+def get_report(user_id: int, saga_id: str):
+    """Return the HTML report for a completed query. Opens inline in the browser."""
+    saga_store = get_saga_state_store()
+    result = saga_store.get_result(saga_id)
+
+    if not result:
+        raise HTTPException(status_code=404, detail="Query result not found or expired")
+
+    report_url = result.get("report_url")
+    if not report_url:
+        raise HTTPException(status_code=404, detail="No report was generated for this query")
+
+    account_id = result.get("account_id")
+    if not account_id:
+        raise HTTPException(status_code=404, detail="Report metadata missing")
+
+    try:
+        minio_client = get_minio_client()
+        object_key = f"{account_id}/{saga_id}.html"
+        obj = minio_client.get_object("reports", object_key)
+        html_bytes = obj.read()
+        obj.close()
+        obj.release_conn()
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=f"Report file not found: {exc}")
+
+    return Response(
+        content=html_bytes,
+        media_type="text/html",
+        headers={"Content-Disposition": f'inline; filename="report-{saga_id}.html"'},
+    )
 

@@ -140,7 +140,8 @@ class ResultFormattedMessage(SagaBaseMessage):
     formatted_response: str = ""
     success: bool = True
     error: Optional[str] = None
-    
+    report_url: Optional[str] = None
+
     def to_dict(self) -> dict:
         data = super().to_dict()
         data["generated_sql"] = self.generated_sql
@@ -149,6 +150,7 @@ class ResultFormattedMessage(SagaBaseMessage):
         data["formatted_response"] = self.formatted_response
         data["success"] = self.success
         data["error"] = self.error
+        data["report_url"] = self.report_url
         return data
 
 
